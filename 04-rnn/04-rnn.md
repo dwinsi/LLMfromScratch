@@ -195,7 +195,15 @@ The hidden-to-hidden weight matrix is what makes it recurrent. At every step, th
 
 ## The activation function: tanh
 
-In Projects 1 and 2 we used sigmoid as the activation function. In the RNN hidden state we use tanh instead.
+In Projects 1 and 2 we used sigmoid as the activation function. In the RNN hidden state we use tanh instead. Before explaining what tanh is, it is worth understanding why we switched.
+
+**Sigmoid always outputs positive values.** In a single feedforward network this is fine. But in an RNN the hidden state passes forward through many time steps. If every value in the hidden state is always positive, the gradients during backpropagation are also always positive. This creates a consistent bias in the direction of weight updates that slows learning and makes the hidden state less expressive.
+
+**Tanh is centred at zero.** The hidden state can be positive or negative. This means the network has more range to represent different kinds of information. A strongly positive hidden state value means one thing. A strongly negative value means the opposite. A value near zero means uncertain. This richer representation makes the RNN more capable.
+
+**Tanh has stronger gradients near zero.** In an RNN, gradients travel backwards through time steps as well as through layers. At each time step the gradient gets multiplied by the derivative of the activation function. Sigmoid's maximum derivative is 0.25. Tanh's maximum derivative is 1.0. With sigmoid, each time step shrinks the gradient by at least 75 percent. With tanh, gradients can pass through early time steps without shrinking at all, as long as the hidden state stays near zero.
+
+This is not a complete solution to vanishing gradients in RNNs. Even tanh saturates at the extremes and the derivative approaches zero there. But it is meaningfully better than sigmoid for hidden states, and it is the standard choice in RNN implementations.
 
 Both sigmoid and tanh are S-shaped curves that squash their input into a bounded range. The difference is the range itself.
 
@@ -264,6 +272,37 @@ output_probabilities = softmax(output_scores[0])
 ---
 
 ## Softmax
+
+Before explaining how softmax works, it is worth asking why we are not using sigmoid here. We used sigmoid in Projects 1 to 3 and it worked well. Why switch?
+
+The answer comes down to what we are asking the network to do.
+
+In Projects 1 to 3, the network had one output neuron making one binary decision. Bring umbrella or not. Sigmoid is exactly right for that. It takes one raw score and produces one probability between 0 and 1.
+
+In Project 4, the network has 77 output neurons, one for each word in the vocabulary. It needs to say how likely each word is relative to all the others. Sigmoid cannot do this because it treats each neuron independently. It has no awareness of the other 76.
+
+If we applied sigmoid to all 77 outputs independently, we might get:
+
+```
+rain:     sigmoid(2.10) = 0.89
+clouds:   sigmoid(0.30) = 0.57
+heavy:    sigmoid(-0.80) = 0.31
+...
+sum = something random, not 1.0
+```
+
+These are valid confidence scores individually but they do not form a probability distribution. The network could be 89 percent confident about rain and 85 percent confident about clouds at the same time. That makes no sense for next-word prediction where exactly one word comes next.
+
+Softmax fixes this by making all 77 outputs compete with each other. Every output is divided by the sum of all outputs. Raising one lowers the others. They always sum to exactly 1.
+
+```
+One output, binary decision         → sigmoid
+Multiple outputs, one winner        → softmax
+```
+
+Our RNN has 77 outputs and exactly one correct next word. Softmax is the right tool.
+
+---
 
 The output layer produces 77 raw scores, one for each word in the vocabulary. These scores can be any number, positive or negative, large or small. To turn them into a probability distribution that sums to 1, we apply softmax.
 
