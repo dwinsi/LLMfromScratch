@@ -28,14 +28,16 @@ Each project lives in its own folder, numbered in the order they were built.
 
 All projects use Python 3 with numpy at minimum. Later projects also use PyTorch.
 
-```
+```powershell
 pip install numpy
+pip install matplotlib
+pip install pytorch
 ```
 
 Then run any project directly.
 
-```
-cd 01-neuron
+```python
+cd '.\01-neuron'
 python neuron.py
 ```
 
