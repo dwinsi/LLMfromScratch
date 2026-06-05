@@ -193,6 +193,45 @@ The hidden-to-hidden weight matrix is what makes it recurrent. At every step, th
 
 ---
 
+## How many parameters does this network have?
+
+Every weight matrix and every bias vector contains parameters. Parameters are the numbers the network learns during training. To count them you multiply the dimensions of each matrix and add the size of each bias vector.
+
+```
+weights_input_to_hidden  (77 × 64):   4,928
+weights_hidden_to_hidden (64 × 64):   4,096
+weights_hidden_to_output (64 × 77):   4,928
+bias_hidden              (1  × 64):      64
+bias_output              (1  × 77):      77
+                                      ------
+Total:                                14,093
+```
+
+The general formula for any fully connected layer is:
+
+```
+parameters = (input_size × output_size) + output_size
+              ↑ weight matrix              ↑ bias vector
+```
+
+The bias vector always has one value per output neuron, so its size always equals the output size.
+
+14,093 parameters learning from 163 training sequences. That ratio is already tight. Roughly 86 parameters per training example. This is part of why the network memorises training phrases rather than generalising to new ones. A model with far more parameters than training examples will always tend toward memorisation.
+
+For perspective:
+
+```
+Our RNN:       14,093 parameters
+GPT-2 small:  117,000,000 parameters
+GPT-3:    175,000,000,000 parameters
+Gemma 4 27B:   26,000,000,000 parameters total
+                4,000,000,000 active per token
+```
+
+The ideas are the same across all of them. The scale is what differs.
+
+---
+
 ## The activation function: tanh
 
 In Projects 1 and 2 we used sigmoid as the activation function. In the RNN hidden state we use tanh instead. Before explaining what tanh is, it is worth understanding why we switched.
