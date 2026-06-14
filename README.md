@@ -76,3 +76,11 @@ Projects 4 through 6 use a small custom weather corpus written specifically for 
 The build-from-scratch approach is not about avoiding frameworks. It is about making frameworks readable. Once you have written backpropagation by hand, `loss.backward()` is not a black box. Once you have written a Q, K, V attention loop in numpy, `nn.MultiheadAttention` is not mysterious.
 
 This repo is the long way around, on purpose.
+
+## References:
+
+[CAPE: Encoding Relative Positions with Continuous Augmented Positional Embeddings](https://arxiv.org/abs/2106.03143)
+[RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)
+[Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385)
+[BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding](https://arxiv.org/abs/1810.04805)
+[Learning Positional Embeddings for Coordinate-MLPs](https://arxiv.org/abs/2112.11577)
