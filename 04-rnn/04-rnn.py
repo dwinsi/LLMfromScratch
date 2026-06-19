@@ -72,7 +72,14 @@ for i in range(len(all_words) - sequence_length):
     training_sequences.append([word_to_index[w] for w in sequence])
     training_targets.append(word_to_index[target])
 
+split              = int(0.8 * len(training_sequences))
+val_sequences      = training_sequences[split:]
+val_targets        = training_targets[split:]
+training_sequences = training_sequences[:split]
+training_targets   = training_targets[:split]
+
 print(f"Training sequences:        {len(training_sequences)}")
+print(f"Validation sequences:      {len(val_sequences)}")
 
 
 # ---- Initialise weights ----
@@ -87,7 +94,8 @@ weights_hidden_to_output = np.random.randn(hidden_size, vocabulary_size) * 0.01
 bias_hidden              = np.zeros((1, hidden_size))
 bias_output              = np.zeros((1, vocabulary_size))
 
-loss_history = []
+loss_history     = []
+val_loss_history = []
 
 
 # ---- Training loop ----
@@ -137,8 +145,22 @@ for epoch in range(epochs):
     average_loss = total_loss / len(training_sequences)
     loss_history.append(average_loss)
 
+    # ---- Validation pass (no weight updates) ----
+    val_total_loss = 0
+    for sequence_indices, target_index in zip(val_sequences, val_targets):
+        hidden_state = np.zeros((1, hidden_size))
+        for word_index in sequence_indices:
+            word_vector  = one_hot_encode(word_index, vocabulary_size)
+            hidden_input = (np.dot(word_vector, weights_input_to_hidden) +
+                            np.dot(hidden_state, weights_hidden_to_hidden) + bias_hidden)
+            hidden_state = np.tanh(hidden_input)
+        output_scores        = np.dot(hidden_state, weights_hidden_to_output) + bias_output
+        output_probabilities = softmax(output_scores[0])
+        val_total_loss      += -np.log(output_probabilities[target_index] + 1e-8)
+    val_loss_history.append(val_total_loss / len(val_sequences))
+
     if epoch % 200 == 0:
-        print(f"Epoch {epoch:5d}  loss: {average_loss:.4f}")
+        print(f"Epoch {epoch:5d}  train loss: {average_loss:.4f}  val loss: {val_loss_history[-1]:.4f}")
 
 
 # ---- Text generation ----
@@ -184,13 +206,14 @@ print(" ", generate_text(['a', 'clear', 'sky']))
 # ---- Plot the loss curve ----
 
 plt.figure(figsize=(10, 5))
-plt.plot(loss_history, color='steelblue', linewidth=1.5, label='Training loss')
+plt.plot(loss_history,     color='steelblue', linewidth=1.5, label='Training loss')
+plt.plot(val_loss_history, color='tomato',    linewidth=1.5, label='Validation loss', linestyle='--')
 plt.axhline(
     y=np.log(vocabulary_size),
-    color='tomato', linestyle='--', linewidth=1,
+    color='gray', linestyle=':', linewidth=1,
     label=f'Random baseline (log {vocabulary_size} = {np.log(vocabulary_size):.2f})'
 )
-plt.title('RNN Training Loss on Weather Corpus', fontsize=13)
+plt.title('RNN Training vs Validation Loss on Weather Corpus', fontsize=13)
 plt.xlabel('Epoch', fontsize=11)
 plt.ylabel('Cross-Entropy Loss', fontsize=11)
 plt.legend(fontsize=10)

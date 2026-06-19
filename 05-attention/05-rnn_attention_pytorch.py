@@ -69,10 +69,19 @@ for i in range(len(all_words) - sequence_length):
     training_sequences.append([word_to_index[w] for w in sequence])
     training_targets.append(word_to_index[target])
 
+split              = int(0.8 * len(training_sequences))
+val_sequences      = training_sequences[split:]
+val_targets        = training_targets[split:]
+training_sequences = training_sequences[:split]
+training_targets   = training_targets[:split]
+
 training_sequences_tensor = [torch.tensor(seq).to(device) for seq in training_sequences]
 training_targets_tensor   = [torch.tensor([tgt]).to(device) for tgt in training_targets]
+val_sequences_tensor      = [torch.tensor(seq).to(device) for seq in val_sequences]
+val_targets_tensor        = [torch.tensor([tgt]).to(device) for tgt in val_targets]
 
 print(f"Training sequences: {len(training_sequences)}")
+print(f"Validation sequences: {len(val_sequences)}")
 
 
 # ---- Network definition ----
@@ -156,7 +165,8 @@ def train_model(optimiser_name, number_of_epochs=1000):
     elif optimiser_name == 'SGD':
         optimiser = optim.SGD(model.parameters(), lr=0.01)
 
-    loss_history = []
+    loss_history     = []
+    val_loss_history = []
 
     for epoch in range(number_of_epochs):
         model.train()
@@ -179,10 +189,18 @@ def train_model(optimiser_name, number_of_epochs=1000):
         average_epoch_loss = total_epoch_loss / len(training_sequences_tensor)
         loss_history.append(average_epoch_loss)
 
-        if epoch % 200 == 0:
-            print(f"  [{optimiser_name}] Epoch {epoch:5d}  loss: {average_epoch_loss:.4f}")
+        model.eval()
+        val_total_loss = 0
+        with torch.no_grad():
+            for seq_t, tgt_t in zip(val_sequences_tensor, val_targets_tensor):
+                out, _ = model(seq_t.unsqueeze(0))
+                val_total_loss += loss_function(out, tgt_t).item()
+        val_loss_history.append(val_total_loss / len(val_sequences_tensor))
 
-    return model, loss_history
+        if epoch % 200 == 0:
+            print(f"  [{optimiser_name}] Epoch {epoch:5d}  train: {average_epoch_loss:.4f}  val: {val_loss_history[-1]:.4f}")
+
+    return model, loss_history, val_loss_history
 
 
 # ---- Run both experiments ----
@@ -194,11 +212,11 @@ print(f"Total parameters: {total_parameters:,}")
 print()
 
 print("Training with Adam...")
-model_adam, adam_loss_history = train_model('Adam', number_of_epochs=_train["epochs"])
+model_adam, adam_loss_history, adam_val_loss_history = train_model('Adam', number_of_epochs=_train["epochs"])
 
 print()
 print("Training with SGD...")
-model_sgd,  sgd_loss_history  = train_model('SGD',  number_of_epochs=_train["epochs"])
+model_sgd,  sgd_loss_history,  sgd_val_loss_history  = train_model('SGD',  number_of_epochs=_train["epochs"])
 
 print()
 print(f"Final loss  Adam: {adam_loss_history[-1]:.4f}")
@@ -244,8 +262,10 @@ print(" ", generate_text(model_sgd, ['dark', 'clouds', 'mean']))
 
 plt.figure(figsize=(12, 5))
 
-plt.plot(adam_loss_history, color='steelblue', linewidth=1.5, label=f'Adam  (final loss: {adam_loss_history[-1]:.4f})')
-plt.plot(sgd_loss_history,  color='tomato',    linewidth=1.5, label=f'SGD   (final loss: {sgd_loss_history[-1]:.4f})',  linestyle='--')
+plt.plot(adam_loss_history,     color='steelblue', linewidth=1.5, label=f'Adam train  (final: {adam_loss_history[-1]:.4f})')
+plt.plot(adam_val_loss_history, color='steelblue', linewidth=1.0, label=f'Adam val    (final: {adam_val_loss_history[-1]:.4f})', linestyle='--')
+plt.plot(sgd_loss_history,      color='tomato',    linewidth=1.5, label=f'SGD  train  (final: {sgd_loss_history[-1]:.4f})')
+plt.plot(sgd_val_loss_history,  color='tomato',    linewidth=1.0, label=f'SGD  val    (final: {sgd_val_loss_history[-1]:.4f})',  linestyle='--')
 
 plt.axhline(
     y=torch.log(torch.tensor(vocabulary_size, dtype=torch.float)).item(),
@@ -262,3 +282,39 @@ plt.savefig('sgd_vs_adam.png', dpi=150)
 plt.show()
 
 print("\nComparison plot saved to sgd_vs_adam.png")
+
+
+# ---- Attention heatmap visualisation ----
+
+seed_sequences = [
+    ['the', 'sky', 'is'],
+    ['bring', 'your', 'umbrella'],
+    ['dark', 'clouds', 'mean'],
+]
+
+model_adam.eval()
+fig, axes = plt.subplots(1, len(seed_sequences), figsize=(12, 3))
+fig.suptitle('RNN Attention Weights (Adam model) — last query attending to each context word', fontsize=12)
+
+with torch.no_grad():
+    for ax, seed in zip(axes, seed_sequences):
+        context_indices = [word_to_index.get(w, 0) for w in seed]
+        seq_tensor      = torch.tensor(context_indices).unsqueeze(0).to(device)
+        _, attn_weights = model_adam(seq_tensor)   # attn_weights: (1, seq_len)
+        weights_np      = attn_weights.squeeze(0).cpu().numpy().reshape(1, -1)
+
+        im = ax.imshow(weights_np, cmap='Blues', vmin=0, vmax=1, aspect='auto')
+        ax.set_xticks(range(len(seed)))
+        ax.set_xticklabels(seed, fontsize=10)
+        ax.set_yticks([])
+        ax.set_title(' '.join(seed), fontsize=9)
+        for j, w in enumerate(weights_np[0]):
+            ax.text(j, 0, f'{w:.2f}', ha='center', va='center', fontsize=9,
+                    color='white' if w > 0.6 else 'black')
+
+plt.colorbar(im, ax=axes[-1], fraction=0.05, label='Attention weight')
+plt.tight_layout()
+plt.savefig('attention_heatmap.png', dpi=150)
+plt.show()
+
+print("Attention heatmap saved to attention_heatmap.png")

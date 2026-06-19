@@ -99,17 +99,32 @@ training_targets   = []
 
 all_token_ids = bpe_tokenizer.encode(corpus_text).ids
 
-for i in range(len(all_token_ids) - sequence_length):
-    training_sequences.append(all_token_ids[i : i + sequence_length])
-    training_targets.append(all_token_ids[i + sequence_length])
+split_idx = int(0.8 * len(all_token_ids))
+train_ids = all_token_ids[:split_idx]
+val_ids   = all_token_ids[split_idx:]
+
+for i in range(len(train_ids) - sequence_length):
+    training_sequences.append(train_ids[i : i + sequence_length])
+    training_targets.append(train_ids[i + sequence_length])
+
+val_sequences = []
+val_targets   = []
+for i in range(len(val_ids) - sequence_length):
+    val_sequences.append(val_ids[i : i + sequence_length])
+    val_targets.append(val_ids[i + sequence_length])
 
 sequences_tensor = torch.tensor(training_sequences)
 targets_tensor   = torch.tensor(training_targets)
+val_seq_tensor   = torch.tensor(val_sequences)
+val_tgt_tensor   = torch.tensor(val_targets)
 
 training_dataset = TensorDataset(sequences_tensor, targets_tensor)
 training_loader  = DataLoader(training_dataset, batch_size=batch_size, shuffle=True)
+val_dataset      = TensorDataset(val_seq_tensor, val_tgt_tensor)
+val_loader       = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-print(f"Training sequences: {len(training_sequences)}")
+print(f"Training sequences:   {len(training_sequences)}")
+print(f"Validation sequences: {len(val_sequences)}")
 
 
 # ---- RMSNorm (unchanged from Project 9) ----
@@ -507,6 +522,7 @@ print(f"Active experts per token:  {number_of_active_experts} of {number_of_expe
 
 training_loss_history              = []
 load_balancing_loss_history        = []
+val_loss_history                   = []
 
 for epoch in range(number_of_epochs):
     model.train()
@@ -540,9 +556,19 @@ for epoch in range(number_of_epochs):
     training_loss_history.append(average_ce_loss)
     load_balancing_loss_history.append(average_lb_loss)
 
+    model.eval()
+    val_total = 0
+    val_batches = 0
+    with torch.no_grad():
+        for batch_seq, batch_tgt in val_loader:
+            out, _ = model(batch_seq.to(device))
+            val_total   += loss_function(out, batch_tgt.to(device)).item()
+            val_batches += 1
+    val_loss_history.append(val_total / val_batches)
+
     if epoch % 400 == 0:
         print(f"Epoch {epoch:5d}  "
-              f"ce_loss: {average_ce_loss:.4f}  "
+              f"train: {average_ce_loss:.4f}  val: {val_loss_history[-1]:.4f}  "
               f"lb_loss: {average_lb_loss:.4f}  "
               f"lr: {scheduler.get_last_lr()[0]:.6f}")
 
@@ -589,10 +615,12 @@ print(f"  (1.0 = perfectly uniform, higher = imbalanced)")
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
 axes[0].plot(training_loss_history, color='steelblue', linewidth=1.5,
-             label=f'MoE ({number_of_experts} experts, top-{number_of_active_experts})')
+             label=f'Training loss — MoE ({number_of_experts} experts, top-{number_of_active_experts})')
+axes[0].plot(val_loss_history,      color='tomato',    linewidth=1.5,
+             label='Validation loss', linestyle='--')
 axes[0].axhline(
-    y=math.log(vocabulary_size), color='tomato',
-    linestyle='--', linewidth=1,
+    y=math.log(vocabulary_size), color='gray',
+    linestyle=':', linewidth=1,
     label=f'Random baseline: {math.log(vocabulary_size):.2f}'
 )
 axes[0].set_title('Cross-Entropy Loss', fontsize=13)
@@ -616,3 +644,66 @@ plt.savefig('loss_curve_moe.png', dpi=150)
 plt.show()
 
 print("Loss curves saved to loss_curve_moe.png")
+
+
+# ---- MoE router visualisation ----
+# Use a forward hook to capture router probabilities from the first MoE block
+# without modifying the class itself.
+
+_captured_router_probs = []
+
+def _router_hook(module, inputs, outputs):
+    """Captures router_probs from MoEBlock.forward() via a hook."""
+    flat_tokens   = inputs[0].view(-1, inputs[0].shape[-1])
+    router_logits = module.router(flat_tokens)
+    router_probs  = torch.softmax(router_logits, dim=-1)
+    _captured_router_probs.append(router_probs.detach().cpu())
+
+# Register hook on the first MoE block in the first transformer layer
+first_moe_block = model.transformer_blocks[0].mixture_of_experts
+hook_handle     = first_moe_block.register_forward_hook(_router_hook)
+
+seed_phrases = ["the sky is cloudy", "bring your umbrella", "dark clouds mean", "a clear sky"]
+
+model.eval()
+with torch.no_grad():
+    for phrase in seed_phrases:
+        token_ids = bpe_tokenizer.encode(phrase.lower()).ids[-sequence_length:]
+        if len(token_ids) < sequence_length:
+            token_ids = [0] * (sequence_length - len(token_ids)) + token_ids
+        seq_tensor = torch.tensor([token_ids]).to(device)
+        model(seq_tensor)
+
+hook_handle.remove()
+
+if _captured_router_probs:
+    all_probs = torch.cat(_captured_router_probs, dim=0).numpy()  # (total_tokens, num_experts)
+
+    fig, (ax_heat, ax_bar) = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Left: heatmap of router probabilities (tokens × experts)
+    im = ax_heat.imshow(all_probs, cmap='YlOrRd', aspect='auto', vmin=0, vmax=1)
+    ax_heat.set_xlabel('Expert index', fontsize=11)
+    ax_heat.set_ylabel('Token (across all seed phrases)', fontsize=11)
+    ax_heat.set_title('Router probabilities: which expert each token prefers', fontsize=11)
+    ax_heat.set_xticks(range(number_of_experts))
+    plt.colorbar(im, ax=ax_heat, label='Router probability')
+
+    # Right: bar chart of expert utilization (how often each expert is top-1 choice)
+    top1_choices = all_probs.argmax(axis=1)
+    utilization  = [(top1_choices == e).sum() for e in range(number_of_experts)]
+    ax_bar.bar(range(number_of_experts), utilization, color='steelblue')
+    ax_bar.axhline(y=len(top1_choices) / number_of_experts, color='tomato',
+                   linestyle='--', label='Ideal uniform load')
+    ax_bar.set_xlabel('Expert index', fontsize=11)
+    ax_bar.set_ylabel('Times selected as top-1 expert', fontsize=11)
+    ax_bar.set_title('Expert utilization across seed phrases', fontsize=11)
+    ax_bar.set_xticks(range(number_of_experts))
+    ax_bar.legend(fontsize=10)
+
+    plt.suptitle(f'MoE Router Analysis — {number_of_experts} experts, top-{number_of_active_experts} routing',
+                 fontsize=13)
+    plt.tight_layout()
+    plt.savefig('router_heatmap.png', dpi=150)
+    plt.show()
+    print("Router heatmap saved to router_heatmap.png")

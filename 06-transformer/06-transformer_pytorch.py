@@ -68,10 +68,19 @@ for i in range(len(all_words) - sequence_length):
     training_sequences.append([word_to_index[w] for w in input_sequence])
     training_targets.append(word_to_index[target_word])
 
+split              = int(0.8 * len(training_sequences))
+val_sequences      = training_sequences[split:]
+val_targets        = training_targets[split:]
+training_sequences = training_sequences[:split]
+training_targets   = training_targets[:split]
+
 training_sequences_tensor = [torch.tensor(seq).to(device) for seq in training_sequences]
 training_targets_tensor   = [torch.tensor([tgt]).to(device) for tgt in training_targets]
+val_sequences_tensor      = [torch.tensor(seq).to(device) for seq in val_sequences]
+val_targets_tensor        = [torch.tensor([tgt]).to(device) for tgt in val_targets]
 
 print(f"Training sequences: {len(training_sequences)}")
+print(f"Validation sequences: {len(val_sequences)}")
 
 
 # ---- Hyperparameters ----
@@ -242,6 +251,7 @@ print(f"Total parameters: {total_parameters:,}")
 # ---- Training loop ----
 
 training_loss_history = []
+val_loss_history      = []
 
 for epoch in range(number_of_epochs):
     model.train()
@@ -264,8 +274,17 @@ for epoch in range(number_of_epochs):
     average_epoch_loss = total_epoch_loss / len(training_sequences_tensor)
     training_loss_history.append(average_epoch_loss)
 
+    # ---- Validation pass ----
+    model.eval()
+    val_total_loss = 0
+    with torch.no_grad():
+        for seq_t, tgt_t in zip(val_sequences_tensor, val_targets_tensor):
+            out, _ = model(seq_t.unsqueeze(0))
+            val_total_loss += loss_function(out, tgt_t).item()
+    val_loss_history.append(val_total_loss / len(val_sequences_tensor))
+
     if epoch % 200 == 0:
-        print(f"Epoch {epoch:5d}  loss: {average_epoch_loss:.4f}")
+        print(f"Epoch {epoch:5d}  train loss: {average_epoch_loss:.4f}  val loss: {val_loss_history[-1]:.4f}")
 
 
 # ---- Text generation ----
@@ -300,14 +319,14 @@ print(" ", generate_text(['a', 'clear', 'sky']))
 # ---- Plot loss curve ----
 
 plt.figure(figsize=(10, 5))
-plt.plot(training_loss_history, color='steelblue', linewidth=1.5,
-         label='Transformer block (PyTorch)')
+plt.plot(training_loss_history, color='steelblue', linewidth=1.5, label='Training loss')
+plt.plot(val_loss_history,      color='tomato',    linewidth=1.5, label='Validation loss', linestyle='--')
 plt.axhline(
     y=torch.log(torch.tensor(vocabulary_size, dtype=torch.float)).item(),
-    color='tomato', linestyle='--', linewidth=1,
+    color='gray', linestyle=':', linewidth=1,
     label=f'Random baseline (log {vocabulary_size} = {torch.log(torch.tensor(vocabulary_size, dtype=torch.float)).item():.2f})'
 )
-plt.title('Transformer Block Training Loss (PyTorch)', fontsize=13)
+plt.title('Transformer Block Training vs Validation Loss (PyTorch)', fontsize=13)
 plt.xlabel('Epoch', fontsize=11)
 plt.ylabel('Cross-Entropy Loss', fontsize=11)
 plt.legend(fontsize=10)
@@ -316,3 +335,45 @@ plt.savefig('loss_curve_pytorch.png', dpi=150)
 plt.show()
 
 print("\nLoss curve saved to loss_curve_pytorch.png")
+
+
+# ---- Attention heatmap visualisation (all 4 heads) ----
+
+seed_sequences = [
+    ['the', 'sky', 'is'],
+    ['bring', 'your', 'umbrella'],
+    ['dark', 'clouds', 'mean'],
+]
+
+model.eval()
+
+with torch.no_grad():
+    for seed in seed_sequences:
+        context_indices = [word_to_index.get(w, 0) for w in seed]
+        seq_tensor      = torch.tensor(context_indices).unsqueeze(0).to(device)
+        _, attn_weights = model(seq_tensor)
+        # attn_weights: (batch, num_heads, seq_len, seq_len) — average over batch
+        weights_np = attn_weights.squeeze(0).cpu().numpy()  # (num_heads, seq_len, seq_len)
+
+        fig, axes = plt.subplots(1, number_of_attention_heads,
+                                 figsize=(3 * number_of_attention_heads, 3))
+        fig.suptitle(f'Transformer attention weights — "{" ".join(seed)}"', fontsize=11)
+
+        for h, ax in enumerate(axes):
+            im = ax.imshow(weights_np[h], cmap='Blues', vmin=0, vmax=1)
+            ax.set_title(f'Head {h + 1}', fontsize=9)
+            ax.set_xticks(range(len(seed)))
+            ax.set_yticks(range(len(seed)))
+            ax.set_xticklabels(seed, fontsize=8, rotation=30, ha='right')
+            ax.set_yticklabels(seed, fontsize=8)
+            for r in range(len(seed)):
+                for c in range(len(seed)):
+                    ax.text(c, r, f'{weights_np[h, r, c]:.2f}', ha='center', va='center',
+                            fontsize=7, color='white' if weights_np[h, r, c] > 0.6 else 'black')
+
+        plt.colorbar(im, ax=axes[-1], fraction=0.05, label='Attention weight')
+        plt.tight_layout()
+        fname = 'attention_' + '_'.join(seed) + '.png'
+        plt.savefig(fname, dpi=150)
+        plt.show()
+        print(f"Attention heatmap saved to {fname}")

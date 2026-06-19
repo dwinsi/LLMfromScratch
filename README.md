@@ -57,35 +57,57 @@ My mini LLM was dense, every parameter active on every token. Gemma 4 26B activa
 
 ---
 
+## Getting started
+
+```bash
+# Projects 1–11 only (no GPU required for early projects)
+pip install -r requirements-core.txt
+
+# All 12 projects including the Gemma 4 agent
+pip install -r requirements.txt
+```
+
+Every project directory contains a `config.json` with all hyperparameters. Change a value there and rerun — no code edits needed.
+
+---
+
 ## Repository structure
 
-```Folder
+```text
 LLMfromScratch/
-├── 01-nuron/
-├── 02-network/
-├── 03-pytorch/
-├── 04-rnn/
-├── 05-attention/
-├── 06-transformer/
-├── 07-mini-LLM/
-├── 08-BPE_tokenisation/
-├── 09-mini_llm_llama_style/
-├── 10-mini_llm_GQA/
-├── 11-Mixture_of_Expert/
+├── requirements.txt              ← all 12 projects
+├── requirements-core.txt         ← projects 1–11 only
+│
+├── 01-nuron/          config.json + neuron.py
+├── 02-network/        config.json + neural_network.py
+├── 03-pytorch/        config.json + weather_predictor.py
+├── 04-rnn/            config.json + 04-rnn.py
+├── 05-attention/      config.json + 05-rnn_attention_pytorch.py
+├── 06-transformer/    config.json + 06-transformer_pytorch.py
+├── 07-mini-LLM/       config.json + mini_llm.py
+├── 08-BPE_tokenisation/  config.json + 08_mini_llm_bpe.py
+├── 09-mini_llm_llama_style/  config.json + mini_llm_llama_style.py
+├── 10-mini_llm_GQA/   config.json + mini_llm_gqa.py
+├── 11-Mixture_of_Expert/  config.json + mini_llm_moe.py
+│
+├── ablations/
+│   ├── ablation_rope_vs_sinusoidal.py   ← sinusoidal PE vs RoPE
+│   ├── ablation_gqa_vs_mha.py           ← standard MHA vs GQA
+│   └── ablation_dense_vs_moe.py         ← dense FFN vs MoE
+│
 └── Research_Agent_Gemma4/
+    ├── config.json
     ├── agent.py
     ├── model.py
     ├── prompts.py
     ├── tools.py
     ├── notebook.ipynb
-    └── articles/
-        ├── README.md          ← you are here
-        ├── 01-from-llm-to-agent.md
-        ├── 02-loading-a-12b-model.md
-        ├── 03-prompt-engineering-as-design.md
-        ├── 04-react-loop-from-scratch.md
-        └── 05-dense-vs-moe.md
+    └── LangChain/      ← same agent rebuilt with LCEL (see LangChain/README.md)
 ```
+
+Projects 4–11 each produce a training **and** validation loss curve. Projects 5, 6, and 11 also produce visualisations: attention heatmaps and an MoE router utilisation plot.
+
+The `ablations/` directory contains three standalone scripts that each train two model variants side by side (500 epochs) to isolate the contribution of a single architectural change.
 
 ---
 

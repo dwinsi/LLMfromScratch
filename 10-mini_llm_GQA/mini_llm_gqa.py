@@ -93,17 +93,32 @@ training_targets   = []
 
 all_token_ids = bpe_tokenizer.encode(corpus_text).ids
 
-for i in range(len(all_token_ids) - sequence_length):
-    training_sequences.append(all_token_ids[i : i + sequence_length])
-    training_targets.append(all_token_ids[i + sequence_length])
+split_idx = int(0.8 * len(all_token_ids))
+train_ids = all_token_ids[:split_idx]
+val_ids   = all_token_ids[split_idx:]
+
+for i in range(len(train_ids) - sequence_length):
+    training_sequences.append(train_ids[i : i + sequence_length])
+    training_targets.append(train_ids[i + sequence_length])
+
+val_sequences = []
+val_targets   = []
+for i in range(len(val_ids) - sequence_length):
+    val_sequences.append(val_ids[i : i + sequence_length])
+    val_targets.append(val_ids[i + sequence_length])
 
 sequences_tensor = torch.tensor(training_sequences)
 targets_tensor   = torch.tensor(training_targets)
+val_seq_tensor   = torch.tensor(val_sequences)
+val_tgt_tensor   = torch.tensor(val_targets)
 
 training_dataset = TensorDataset(sequences_tensor, targets_tensor)
 training_loader  = DataLoader(training_dataset, batch_size=batch_size, shuffle=True)
+val_dataset      = TensorDataset(val_seq_tensor, val_tgt_tensor)
+val_loader       = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-print(f"Training sequences: {len(training_sequences)}")
+print(f"Training sequences:   {len(training_sequences)}")
+print(f"Validation sequences: {len(val_sequences)}")
 
 
 # ---- RMSNorm (unchanged from Project 9) ----
@@ -354,6 +369,7 @@ print(f"Parameters saved:  {167040 - total_parameters:,} (smaller KV projections
 # ---- Training loop ----
 
 training_loss_history = []
+val_loss_history      = []
 
 for epoch in range(number_of_epochs):
     model.train()
@@ -378,8 +394,18 @@ for epoch in range(number_of_epochs):
     average_epoch_loss = total_loss / num_batches
     training_loss_history.append(average_epoch_loss)
 
+    model.eval()
+    val_total = 0
+    val_batches = 0
+    with torch.no_grad():
+        for batch_seq, batch_tgt in val_loader:
+            out = model(batch_seq.to(device))
+            val_total   += loss_function(out, batch_tgt.to(device)).item()
+            val_batches += 1
+    val_loss_history.append(val_total / val_batches)
+
     if epoch % 400 == 0:
-        print(f"Epoch {epoch:5d}  loss: {average_epoch_loss:.4f}  lr: {scheduler.get_last_lr()[0]:.6f}")
+        print(f"Epoch {epoch:5d}  train: {average_epoch_loss:.4f}  val: {val_loss_history[-1]:.4f}  lr: {scheduler.get_last_lr()[0]:.6f}")
 
 
 # ---- Text generation ----
@@ -421,13 +447,15 @@ print(f"\nFinal loss: {training_loss_history[-1]:.4f}")
 
 plt.figure(figsize=(10, 5))
 plt.plot(training_loss_history, color='steelblue', linewidth=1.5,
-         label=f'GQA model (4Q 2K 2V, {total_parameters:,} params)')
+         label=f'Training loss — GQA (4Q 2KV, {total_parameters:,} params)')
+plt.plot(val_loss_history,      color='tomato',    linewidth=1.5,
+         label='Validation loss', linestyle='--')
 plt.axhline(
     y=math.log(vocabulary_size),
-    color='tomato', linestyle='--', linewidth=1,
+    color='gray', linestyle=':', linewidth=1,
     label=f'Random baseline: {math.log(vocabulary_size):.2f}'
 )
-plt.title('Mini LLM: Grouped Query Attention Training Loss', fontsize=13)
+plt.title('Mini LLM: Grouped Query Attention Training vs Validation Loss', fontsize=13)
 plt.xlabel('Epoch', fontsize=11)
 plt.ylabel('Cross-Entropy Loss', fontsize=11)
 plt.legend(fontsize=10)

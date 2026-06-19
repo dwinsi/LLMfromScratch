@@ -72,10 +72,19 @@ for i in range(len(all_words) - sequence_length):
     training_sequences.append([word_to_index[w] for w in input_sequence])
     training_targets.append(word_to_index[target_word])
 
+split              = int(0.8 * len(training_sequences))
+val_sequences      = training_sequences[split:]
+val_targets        = training_targets[split:]
+training_sequences = training_sequences[:split]
+training_targets   = training_targets[:split]
+
 training_sequences_tensor = [torch.tensor(seq).to(device) for seq in training_sequences]
 training_targets_tensor   = [torch.tensor([tgt]).to(device) for tgt in training_targets]
+val_sequences_tensor      = [torch.tensor(seq).to(device) for seq in val_sequences]
+val_targets_tensor        = [torch.tensor([tgt]).to(device) for tgt in val_targets]
 
 print(f"Training sequences: {len(training_sequences)}")
+print(f"Validation sequences: {len(val_sequences)}")
 
 
 # ---- Single Transformer block ----
@@ -267,6 +276,7 @@ print(f"Total parameters: {total_parameters:,}")
 # ---- Training loop ----
 
 training_loss_history = []
+val_loss_history      = []
 
 for epoch in range(number_of_epochs):
     model.train()
@@ -292,8 +302,17 @@ for epoch in range(number_of_epochs):
     average_epoch_loss = total_epoch_loss / len(training_sequences_tensor)
     training_loss_history.append(average_epoch_loss)
 
+    # ---- Validation pass ----
+    model.eval()
+    val_total_loss = 0
+    with torch.no_grad():
+        for seq_t, tgt_t in zip(val_sequences_tensor, val_targets_tensor):
+            out = model(seq_t.unsqueeze(0))
+            val_total_loss += loss_function(out, tgt_t).item()
+    val_loss_history.append(val_total_loss / len(val_sequences_tensor))
+
     if epoch % 200 == 0:
-        print(f"Epoch {epoch:5d}  loss: {average_epoch_loss:.4f}")
+        print(f"Epoch {epoch:5d}  train loss: {average_epoch_loss:.4f}  val loss: {val_loss_history[-1]:.4f}")
 
 
 # ---- Text generation with temperature ----
@@ -350,13 +369,15 @@ print(" ", generate_text(['the', 'storm', 'is', 'moving'], temperature=0.8))
 
 plt.figure(figsize=(10, 5))
 plt.plot(training_loss_history, color='steelblue', linewidth=1.5,
-         label=f'Mini LLM ({number_of_blocks} blocks, {total_parameters:,} params)')
+         label=f'Training loss ({number_of_blocks} blocks, {total_parameters:,} params)')
+plt.plot(val_loss_history,      color='tomato',    linewidth=1.5,
+         label='Validation loss', linestyle='--')
 plt.axhline(
     y=math.log(vocabulary_size),
-    color='tomato', linestyle='--', linewidth=1,
+    color='gray', linestyle=':', linewidth=1,
     label=f'Random baseline: {math.log(vocabulary_size):.2f}'
 )
-plt.title('Mini Language Model Training Loss', fontsize=13)
+plt.title('Mini Language Model Training vs Validation Loss', fontsize=13)
 plt.xlabel('Epoch', fontsize=11)
 plt.ylabel('Cross-Entropy Loss', fontsize=11)
 plt.legend(fontsize=10)
