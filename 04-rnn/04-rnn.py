@@ -9,10 +9,16 @@ Architecture: word embeddings -> hidden state (tanh) -> output (softmax)
 New concepts: vocabulary building, sequence prediction, cross-entropy loss
 """
 
+import json
+import pathlib
 import numpy as np
 import matplotlib.pyplot as plt
 
-np.random.seed(42)
+_cfg = json.loads((pathlib.Path(__file__).parent / "config.json").read_text())
+_model = _cfg["model"]
+_train = _cfg["training"]
+
+np.random.seed(_train["seed"])
 
 
 # ---- Helper functions ----
@@ -56,7 +62,7 @@ print(f"Unique words (vocabulary): {vocabulary_size}")
 # ---- Build training sequences ----
 # Each sequence of 3 words predicts the next word
 
-sequence_length    = 3
+sequence_length    = _model["sequence_length"]
 training_sequences = []
 training_targets   = []
 
@@ -71,9 +77,9 @@ print(f"Training sequences:        {len(training_sequences)}")
 
 # ---- Initialise weights ----
 
-hidden_size   = 64
-learning_rate = 0.01
-epochs        = 1000
+hidden_size   = _model["hidden_size"]
+learning_rate = _train["learning_rate"]
+epochs        = _train["epochs"]
 
 weights_input_to_hidden  = np.random.randn(vocabulary_size, hidden_size) * 0.01
 weights_hidden_to_hidden = np.random.randn(hidden_size, hidden_size)     * 0.01

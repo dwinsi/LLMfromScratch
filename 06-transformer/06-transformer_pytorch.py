@@ -18,12 +18,18 @@ What stays visible:
   The training loop and generation
 """
 
+import json
+import pathlib
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
-torch.manual_seed(42)
+_cfg = json.loads((pathlib.Path(__file__).parent / "config.json").read_text())
+_model = _cfg["model"]
+_train = _cfg["training"]
+
+torch.manual_seed(_train["seed"])
 
 # ---- Device setup ----
 # device = torch.device(
@@ -31,7 +37,7 @@ torch.manual_seed(42)
 #     'mps'  if torch.backends.mps.is_available() else
 #     'cpu'
 # )
-device = torch.device('cpu')
+device = torch.device(_train["device"])
 print(f"Using device: {device}")
 
 
@@ -52,7 +58,7 @@ print(f"Vocabulary size: {vocabulary_size}")
 
 # ---- Build training sequences ----
 
-sequence_length    = 3
+sequence_length    = _model["sequence_length"]
 training_sequences = []
 training_targets   = []
 
@@ -70,12 +76,12 @@ print(f"Training sequences: {len(training_sequences)}")
 
 # ---- Hyperparameters ----
 
-embedding_dim                 = 64
-number_of_attention_heads     = 4
-feedforward_hidden_dim        = 128
-dropout_rate                  = 0.1
-learning_rate                 = 0.001
-number_of_epochs              = 1000
+embedding_dim                 = _model["embedding_dim"]
+number_of_attention_heads     = _model["number_of_attention_heads"]
+feedforward_hidden_dim        = _model["feedforward_hidden_dim"]
+dropout_rate                  = _model["dropout_rate"]
+learning_rate                 = _train["learning_rate"]
+number_of_epochs              = _train["epochs"]
 
 assert embedding_dim % number_of_attention_heads == 0, \
     "embedding_dim must be divisible by number_of_attention_heads"

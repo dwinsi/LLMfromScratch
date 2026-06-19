@@ -1,0 +1,21 @@
+{
+  "model": {
+    "vocab_size": 256,
+    "sequence_length": 8,
+    "embedding_dim": 64,
+    "number_of_query_heads": 4,
+    "number_of_kv_heads": 2,
+    "feedforward_hidden_dim": 128,
+    "number_of_blocks": 4,
+    "dropout_rate": 0.1,
+    "rmsnorm_epsilon": 1e-6,
+    "rope_base": 10000
+  },
+  "training": {
+    "seed": 42,
+    "batch_size": 32,
+    "learning_rate": 0.001,
+    "epochs": 2000,
+    "grad_clip_max_norm": 1.0
+  }
+}

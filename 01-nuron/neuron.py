@@ -1,5 +1,8 @@
+import json
+import pathlib
 import numpy as np
 
+_cfg = json.loads((pathlib.Path(__file__).parent / "config.json").read_text())
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
@@ -14,7 +17,7 @@ if __name__ == "__main__":
 
     weights = np.array([0.6, .3, 0.1])
 
-    bias = -0.2
+    bias = _cfg["model"]["bias"]
 
     output = neuron(inputs, weights, bias)
 

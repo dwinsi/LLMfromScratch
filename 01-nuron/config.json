@@ -1,0 +1,8 @@
+{
+  "model": {
+    "bias": -0.2
+  },
+  "training": {
+    "seed": 42
+  }
+}

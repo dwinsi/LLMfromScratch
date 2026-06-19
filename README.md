@@ -1,86 +1,102 @@
-# LLM from Scratch
+# From Neuron to Agent
 
-A learning project where I build the path from a single neuron to a mini language model, one project at a time. Each project is small, runnable on a laptop, and accompanied by a written walkthrough published on LinkedIn.
+*A five-part series. The capstone of a 12-project journey.*
 
-This is not a course. It is a working notebook of what I built and what I learned along the way.
+---
 
-## Goal
+I started this repository with a single neuron, a sigmoid function, and a weather prediction example.
 
-I wanted to understand how LLMs actually work, not just use them. The only way I found to do that was to build every piece from scratch, with the math visible, starting from the smallest possible neural network and adding one layer of complexity at a time until I had trained a language model end to end on my own machine.
+Twelve projects later, I have a research agent built on Gemma 4 12B that takes a question, breaks it into sub-questions, searches the web for each, and synthesises a structured answer, all orchestrated with plain Python and no frameworks.
 
-Frameworks like PyTorch are excellent. They are also opaque if you have never built the pieces underneath them yourself. Every abstraction in PyTorch now has a concrete referent in something I built by hand in an earlier project.
+This article series is not a tutorial on how to use Gemma 4. It is a record of what 11 projects of building from scratch taught me when I finally loaded a production model and gave it a goal. Every concept in these articles connects back to something I built by hand first.
 
-## The series
+---
 
+## The 12-project journey
+
+| Project | What I built |
+| --- | --- |
+| 01 | A single neuron from scratch |
+| 02 | A neural network that learns via backpropagation |
+| 03 | The same network rebuilt in PyTorch |
+| 04 | A word-level RNN on a custom corpus |
+| 05 | An RNN with hand-rolled attention (Q, K, V) |
+| 06 | A full Transformer block in NumPy and PyTorch |
+| 07 | A mini LLM with 4 stacked Transformer blocks |
+| 08 | BPE tokenisation via HuggingFace tokenizers |
+| 09 | A Llama-style mini LLM with RMSNorm and SwiGLU |
+| 10 | The same model improved with Grouped Query Attention |
+| 11 | Mixture of Experts architecture from scratch |
+| 12 | A research agent built on Gemma 4 12B |
+
+Projects 1–7 built the foundation. Projects 8–11 added the exact techniques that make production LLMs work at scale. Project 12 was the question: what happens when you give that architecture a goal?
+
+---
+
+## The five articles
+
+### [Part 1 — From LLM to Agent: What Actually Changes](./01-from-llm-to-agent.md)
+
+Seven projects to build a mini LLM. One more to give it a goal. This article bridges the build series and the agent project, what changes when a language model gets tools and a reasoning loop instead of just a prompt.
+
+### [Part 2 — Loading a 12B Model: What I Learned](./02-loading-a-12b-model.md)
+
+My mini LLM had 4 Transformer blocks. Gemma 4 12B has 48. This article covers what changes at scale, 4-bit quantisation, device mapping across two GPUs, and every wrong class name and deprecated API I hit along the way.
+
+### [Part 3 — Prompt Engineering Is a Design Problem](./03-prompt-engineering-as-design.md)
+
+The most underestimated file in the project was `prompts.py`. Writing a prompt that a model must parse reliably is not a creative exercise. It is a software design problem with contracts, failure modes, and consequences.
+
+### [Part 4 — The ReAct Loop, Built From Scratch](./04-react-loop-from-scratch.md)
+
+The pattern that every agentic system uses, reason, act, observe, repeat, explained through the pipeline I built. No LangChain, no abstractions, just the loop written in plain Python so the mechanism is visible.
+
+### [Part 5 — Dense vs MoE: The Architecture Beyond](./05-dense-vs-moe.md)
+
+My mini LLM was dense, every parameter active on every token. Gemma 4 26B activates only 4 billion parameters out of 26 billion per token using Mixture of Experts routing. This article explains why that matters and what Project 11 taught me before I understood it in a production model.
+
+---
+
+## Repository structure
+
+```Folder
+LLMfromScratch/
+├── 01-nuron/
+├── 02-network/
+├── 03-pytorch/
+├── 04-rnn/
+├── 05-attention/
+├── 06-transformer/
+├── 07-mini-LLM/
+├── 08-BPE_tokenisation/
+├── 09-mini_llm_llama_style/
+├── 10-mini_llm_GQA/
+├── 11-Mixture_of_Expert/
+└── Research_Agent_Gemma4/
+    ├── agent.py
+    ├── model.py
+    ├── prompts.py
+    ├── tools.py
+    ├── notebook.ipynb
+    └── articles/
+        ├── README.md          ← you are here
+        ├── 01-from-llm-to-agent.md
+        ├── 02-loading-a-12b-model.md
+        ├── 03-prompt-engineering-as-design.md
+        ├── 04-react-loop-from-scratch.md
+        └── 05-dense-vs-moe.md
 ```
-01-neuron/        A single neuron. Forward pass only. Weights picked by hand.
-02-network/       A small network that learns. Backpropagation from scratch.
-03-pytorch/       Same network rebuilt in PyTorch. Train/validation split.
-04-rnn/           A word-level RNN on a custom weather corpus. numpy only.
-05-attention/     RNN with attention rebuilt in PyTorch. Q, K, V hand-rolled.
-06-transformer/   A complete Transformer block. numpy for math, PyTorch for training.
-07-mini-llm/      Four stacked Transformer blocks. A mini language model end to end.
-```
 
-## Progress across the series
+---
 
-| Project | Parameters | Final loss | Key concept |
-|---|---|---|---|
-| 01 neuron | 1 neuron | n/a (no training) | Forward pass, sigmoid |
-| 02 network | 61 | 0.0004 | Backpropagation, MSE loss |
-| 03 pytorch | 61 | varies | PyTorch, validation split |
-| 04 rnn | 14,093 | 1.83 | Sequence prediction, cross-entropy |
-| 05 attention | 26,381 | run to verify | Q, K, V attention |
-| 06 transformer | 43,405 | 0.01 | Multi-head attention, residuals, layer norm |
-| 07 mini-llm | 159,558 | 0.00 | Stacked blocks, batching, cosine annealing |
+## The principle behind all of it
 
-## Requirements
+The problem always comes first. The language follows.
 
-Projects 1 through 4 use numpy only.
+I did not learn Gemma 4 by reading the documentation first. I learned it by spending 11 projects understanding what was inside it, and then loading it.
 
-```
-pip install numpy matplotlib
-```
+That is the only way I know how to learn something properly.
 
-Projects 5 through 7 use PyTorch.
+---
 
-```
-pip install torch matplotlib
-```
-
-Python 3.8 or higher. All projects run on CPU. Projects 5 through 7 will use a GPU automatically if one is available (CUDA on NVIDIA, MPS on Apple Silicon).
-
-## Running any project
-
-```
-cd 01-neuron
-python neuron.py
-```
-
-Each folder has its own README with expected output and what to look for when running.
-
-## The overfitting arc
-
-One thread runs through the entire series. Overfitting appears early and gets addressed gradually.
-
-Project 2 plants the question. Project 3 introduces the validation split. Project 4 shows overfitting in generated text. Project 5 makes it explicit. Project 6 adds dropout. Project 7 adds batching, gradient clipping and cosine annealing.
-
-The honest conclusion at the end of Project 7: overfitting on a dataset this small is inevitable. The real solution is more training data. GPT-3 trained on 45 billion tokens. This model trained on 499 sequences of 4 words each. The architecture is the same. The scale is not.
-
-## The weather corpus
-
-Projects 4 through 6 use a small custom weather corpus written specifically for the series (30 sentences, 77 vocabulary). Project 7 uses an expanded version (91 sentences, 198 vocabulary). Both are included in their respective project folders.
-
-## Why from scratch
-
-The build-from-scratch approach is not about avoiding frameworks. It is about making frameworks readable. Once you have written backpropagation by hand, `loss.backward()` is not a black box. Once you have written a Q, K, V attention loop in numpy, `nn.MultiheadAttention` is not mysterious.
-
-This repo is the long way around, on purpose.
-
-## References:
-
-[CAPE: Encoding Relative Positions with Continuous Augmented Positional Embeddings](https://arxiv.org/abs/2106.03143)
-[RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)
-[Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385)
-[BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding](https://arxiv.org/abs/1810.04805)
-[Learning Positional Embeddings for Coordinate-MLPs](https://arxiv.org/abs/2112.11577)
+### github.com/dwinsi/LLMfromScratch

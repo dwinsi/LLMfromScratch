@@ -20,6 +20,8 @@ Install requirements:
   pip install torch tokenizers matplotlib
 """
 
+import json
+import pathlib
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -33,7 +35,11 @@ from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import ByteLevel
 from tokenizers.decoders import ByteLevel as ByteLevelDecoder
 
-torch.manual_seed(42)
+_cfg = json.loads((pathlib.Path(__file__).parent / "config.json").read_text())
+_model_cfg = _cfg["model"]
+_train_cfg = _cfg["training"]
+
+torch.manual_seed(_train_cfg["seed"])
 
 # ---- Device setup ----
 try:
@@ -63,7 +69,7 @@ bpe_tokenizer.pre_tokenizer = ByteLevel()
 bpe_tokenizer.decoder       = ByteLevelDecoder()
 
 bpe_trainer = BpeTrainer(
-    vocab_size=256,
+    vocab_size=_model_cfg["vocab_size"],
     special_tokens=["[UNK]", "[PAD]", "[BOS]", "[EOS]"],
     min_frequency=1
 )
@@ -77,8 +83,8 @@ print(f"Vocabulary size: {vocabulary_size}")
 
 # ---- Build training sequences ----
 
-batch_size         = 32
-sequence_length    = 8
+batch_size         = _train_cfg["batch_size"]
+sequence_length    = _model_cfg["sequence_length"]
 training_sequences = []
 training_targets   = []
 
@@ -373,13 +379,13 @@ class MiniLanguageModel(nn.Module):
 
 # ---- Initialise model ----
 
-embedding_dim             = 64
-number_of_attention_heads = 4
-feedforward_hidden_dim    = 128
-number_of_blocks          = 4
-dropout_rate              = 0.1
-learning_rate             = 0.001
-number_of_epochs          = 2000
+embedding_dim             = _model_cfg["embedding_dim"]
+number_of_attention_heads = _model_cfg["number_of_attention_heads"]
+feedforward_hidden_dim    = _model_cfg["feedforward_hidden_dim"]
+number_of_blocks          = _model_cfg["number_of_blocks"]
+dropout_rate              = _model_cfg["dropout_rate"]
+learning_rate             = _train_cfg["learning_rate"]
+number_of_epochs          = _train_cfg["epochs"]
 
 model = MiniLanguageModel(
     vocabulary_size=vocabulary_size,

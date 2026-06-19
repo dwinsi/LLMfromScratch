@@ -20,12 +20,18 @@ This file also includes a side by side comparison of Adam vs SGD
 using the same network and data to show the difference in convergence.
 """
 
+import json
+import pathlib
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
-torch.manual_seed(42)
+_cfg = json.loads((pathlib.Path(__file__).parent / "config.json").read_text())
+_model = _cfg["model"]
+_train = _cfg["training"]
+
+torch.manual_seed(_train["seed"])
 
 # ---- Device setup ----
 # device = torch.device(
@@ -33,7 +39,7 @@ torch.manual_seed(42)
 #     'mps'  if torch.backends.mps.is_available() else
 #     'cpu'
 # )
-device = torch.device('cpu')
+device = torch.device(_train["device"])
 print(f"Using device: {device}")
 
 
@@ -53,7 +59,7 @@ print(f"Vocabulary size: {vocabulary_size}")
 
 # ---- Build training sequences ----
 
-sequence_length    = 3
+sequence_length    = _model["sequence_length"]
 training_sequences = []
 training_targets   = []
 
@@ -139,14 +145,14 @@ def train_model(optimiser_name, number_of_epochs=1000):
     """
     torch.manual_seed(42)
 
-    hidden_size    = 64
-    attention_size = 32
+    hidden_size    = _model["hidden_size"]
+    attention_size = _model["attention_size"]
 
     model         = RNNWithAttention(vocabulary_size, hidden_size, attention_size).to(device)
     loss_function = nn.CrossEntropyLoss()
 
     if optimiser_name == 'Adam':
-        optimiser = optim.Adam(model.parameters(), lr=0.001)
+        optimiser = optim.Adam(model.parameters(), lr=_train["learning_rate"])
     elif optimiser_name == 'SGD':
         optimiser = optim.SGD(model.parameters(), lr=0.01)
 
@@ -188,11 +194,11 @@ print(f"Total parameters: {total_parameters:,}")
 print()
 
 print("Training with Adam...")
-model_adam, adam_loss_history = train_model('Adam', number_of_epochs=1000)
+model_adam, adam_loss_history = train_model('Adam', number_of_epochs=_train["epochs"])
 
 print()
 print("Training with SGD...")
-model_sgd,  sgd_loss_history  = train_model('SGD',  number_of_epochs=1000)
+model_sgd,  sgd_loss_history  = train_model('SGD',  number_of_epochs=_train["epochs"])
 
 print()
 print(f"Final loss  Adam: {adam_loss_history[-1]:.4f}")

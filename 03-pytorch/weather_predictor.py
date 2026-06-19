@@ -9,12 +9,17 @@ Framework:    PyTorch (WeatherPredictor class, autograd, SGD optimiser)
 New concept:  Train/validation split, watching both loss curves
 """
 
+import json
+import pathlib
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
-torch.manual_seed(42)
+_cfg = json.loads((pathlib.Path(__file__).parent / "config.json").read_text())
+_train = _cfg["training"]
+
+torch.manual_seed(_train["seed"])
 
 # ---- Training data (same as Projects 1 and 2) ----
 training_inputs = torch.tensor([
@@ -61,11 +66,11 @@ class WeatherPredictor(nn.Module):
 
 network       = WeatherPredictor()
 loss_function = nn.MSELoss()
-optimiser     = optim.SGD(network.parameters(), lr=0.5)
+optimiser     = optim.SGD(network.parameters(), lr=_train["learning_rate"])
 
 training_loss_history   = []
 validation_loss_history = []
-epochs = 5000
+epochs = _train["epochs"]
 
 for epoch in range(epochs):
 

@@ -1,0 +1,5 @@
+# Projects 01-11 only (no agent/LLM loading dependencies)
+numpy>=1.24
+matplotlib>=3.7
+torch>=2.2
+tokenizers>=0.19

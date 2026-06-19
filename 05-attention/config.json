@@ -1,0 +1,13 @@
+{
+  "model": {
+    "sequence_length": 3,
+    "hidden_size": 64,
+    "attention_size": 32
+  },
+  "training": {
+    "seed": 42,
+    "device": "cpu",
+    "learning_rate": 0.001,
+    "epochs": 1000
+  }
+}

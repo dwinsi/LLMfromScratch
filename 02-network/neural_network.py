@@ -12,10 +12,15 @@ This script runs two training experiments side by side to show
 how adjusting the number of epochs affects the final result.
 """
 
+import json
+import pathlib
 import numpy as np
 import matplotlib.pyplot as plt
 
-np.random.seed(42)
+_cfg = json.loads((pathlib.Path(__file__).parent / "config.json").read_text())
+_train = _cfg["training"]
+
+np.random.seed(_train["seed"])
 
 
 def sigmoid(x):
@@ -106,7 +111,7 @@ training_labels = np.array([[1], [0], [1], [0], [1], [0]])
 print("=" * 45)
 print("Experiment 1: Training for 800 epochs")
 print("=" * 45)
-predicted_800, loss_history_800 = train_network(training_inputs, training_labels, epochs=800)
+predicted_800, loss_history_800 = train_network(training_inputs, training_labels, epochs=800, learning_rate=_train["learning_rate"])
 
 print()
 print("Predictions after 800 epochs:")
@@ -123,7 +128,7 @@ print()
 print("=" * 45)
 print("Experiment 2: Training for 5000 epochs")
 print("=" * 45)
-predicted_5000, loss_history_5000 = train_network(training_inputs, training_labels, epochs=5000)
+predicted_5000, loss_history_5000 = train_network(training_inputs, training_labels, epochs=_train["epochs"], learning_rate=_train["learning_rate"])
 
 print()
 print("Predictions after 5000 epochs:")

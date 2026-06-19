@@ -1,0 +1,11 @@
+{
+  "model": {
+    "sequence_length": 3,
+    "hidden_size": 64
+  },
+  "training": {
+    "seed": 42,
+    "learning_rate": 0.01,
+    "epochs": 1000
+  }
+}
