@@ -2,7 +2,7 @@
 
 ![Cover](/07-mini-LLM/images/cover.png)
 
-*Project 7 in my build series at github.com/dwinsi/LLMfromScratch*
+Project 7 in my build series at [Github repo](github.com/dwinsi/LLMfromScratch)
 
 Six projects ago I built a single neuron. It took a few numbers, multiplied them by weights, and produced one output. That neuron had no memory, no sense of sequence, no understanding of language.
 
@@ -32,7 +32,7 @@ The weather corpus from Projects 4 through 6 had 30 sentences and 77 unique word
 
 The expanded corpus has 91 sentences, 503 words and 198 unique vocabulary. It covers the full range of weather phenomena: fog, frost, hail, lightning, snow, thunder, rainbows, seasons and temperature changes. Richer vocabulary gives the model more patterns to learn and more relationships to discover between words.
 
-```
+```text
 the forecast says rain all week
 morning fog covers the valley
 thunder follows lightning in storms
@@ -174,7 +174,7 @@ After each epoch, `scheduler.step()` reduces the learning rate following a cosin
 
 The actual values from training:
 
-```
+```text
 Epoch     0  lr: 0.001000
 Epoch   400  lr: 0.000904
 Epoch   800  lr: 0.000654
@@ -192,7 +192,7 @@ This is the same principle as finding a parking space. You drive quickly when yo
 
 ## Parameter count
 
-```
+```text
 word_embedding_matrix:         198 × 64  =  12,672
 
 Per Transformer block (× 4):
@@ -220,7 +220,7 @@ Project 1 had one neuron. Project 6 had 43,405 parameters. Project 7 has 159,558
 
 ## Training results
 
-```
+```text
 Using device: cpu
 Vocabulary size:    198
 Total words:        503
@@ -240,13 +240,47 @@ Loss drops from 5.06 to essentially zero. The random baseline for 198 vocabulary
 
 The most striking thing about the loss curve is the shape. Almost all of the learning happens in the first 100 epochs. The curve drops steeply like a cliff then hugs near zero for the remaining 1900 epochs. The cosine scheduler and gradient clipping kept the curve smooth throughout with no oscillations.
 
+---
+
+## Where the initial loss of 5.06 comes from
+
+The starting loss was not calculated in advance. It came from the first forward pass of the model with random weights.
+
+For a randomly initialised model predicting over a vocabulary of 198 words, the expected loss is:
+
+```text
+log(vocabulary_size) = log(198) = 5.29
+```
+
+This is the cross-entropy loss of a model that assigns equal probability to every word. If all 198 words are equally likely, the probability of the correct one is 1/198, and:
+
+```text
+-log(1/198) = log(198) = 5.29
+```
+
+That is the theoretical random baseline. A model that knows nothing should produce exactly this.
+
+The actual first epoch loss was 5.06, slightly below 5.29. Two reasons for the small gap.
+
+Weight initialisation is not perfectly uniform. Random weights from a normal distribution create slight biases toward some outputs over others from the very first forward pass.
+
+The first epoch averages loss across all 499 sequences in random batches. Some sequences are easier than others, pulling the average slightly below the theoretical maximum.
+
+The dashed red line in the loss curve plot marks exactly this baseline at log(198) = 5.29. When the curve sits below that line from the very first epoch, it means the model is already very slightly better than random before any real learning has happened. Everything below that line is genuine learning.
+
+---
+
+## The shape of the loss curve
+
+The most striking thing about the loss curve is the shape. Almost all of the learning happens in the first 100 epochs. The curve drops steeply like a cliff then hugs near zero for the remaining 1900 epochs. The cosine scheduler and gradient clipping kept the curve smooth throughout with no oscillations.
+
 ![Mini LLM training loss curve showing steep drop in first 100 epochs then flat line near zero](/07-mini-LLM/images/loss_curve.png)
 
 ---
 
 ## Generated text
 
-```
+```text
 Greedy (temperature=0.0):
   the sky is cloudy today bring your umbrella when it rains dark
   bring your umbrella when it rains dark clouds mean heavy rain the

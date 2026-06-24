@@ -369,7 +369,7 @@ def train_moe(model: MoEModel, loader: DataLoader, device: torch.device):
 
 def main():
     torch.manual_seed(SEED)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
     print(f"Using device: {device}")
 
     print("Building tokenizer...")
