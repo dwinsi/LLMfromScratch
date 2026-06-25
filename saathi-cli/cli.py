@@ -36,7 +36,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from agent import load_llm, build_agent, compact_history, OLLAMA_MODEL
 from memory_store import MemoryStore
-from tools import set_memory_store
+from tools import set_memory_store, reset_turn_snapshot, get_turn_snapshot
 
 
 console = Console()
@@ -139,6 +139,9 @@ def print_help():
 | `/context <path> ...` | Scope agent to specific files or folders |
 | `/context` | Clear scope — agent works unrestricted |
 | `clear` | Reset conversation history (keeps scope and memory) |
+| `/rollback` | Undo the last turn — restores files and removes it from history |
+| `/rollback <n>` | Undo the last n turns |
+| `/checkpoints` | List all recorded turns and which files each one touched |
 | `/memory list` | Show all saved facts (global and project) |
 | `/memory save <scope> <key> <value>` | Manually save a fact to memory |
 | `/memory delete <scope> <key>` | Delete a single fact from memory |
@@ -236,7 +239,8 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
 
     llm            = load_llm()
     agent_executor = build_agent(llm, context_paths or None, memory_block)
-    history: list  = []   # grows each turn; compacted before every call
+    history: list        = []   # grows each turn; compacted before every call
+    checkpoints: list    = []   # each entry: {"files": snapshot, "history_len": n, "task": str}
 
     console.print("[bold green]Agent ready.[/bold green] What would you like to do?\n")
 
@@ -333,7 +337,49 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
                 console.print("[dim]/memory list | save | delete | clear[/dim]\n")
                 continue
 
+            if user_input.lower().startswith('/rollback'):
+                parts = user_input.split()
+                steps = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
+                steps = min(steps, len(checkpoints))
+                if not checkpoints:
+                    console.print("[yellow]Nothing to roll back — no turns recorded yet.[/yellow]\n")
+                    continue
+                for _ in range(steps):
+                    cp = checkpoints.pop()
+                    # Restore files touched in that turn
+                    for path, original in cp["files"].items():
+                        if original is None:
+                            if os.path.exists(path):
+                                os.remove(path)
+                                console.print(f"  [dim]deleted[/dim] {path}")
+                        else:
+                            with open(path, 'w', encoding='utf-8') as fh:
+                                fh.write(original)
+                            console.print(f"  [dim]restored[/dim] {path}")
+                    # Trim history back to before that turn
+                    history = history[:cp["history_len"]]
+                console.print(f"[green]Rolled back {steps} turn(s).[/green]\n")
+                continue
+
+            if user_input.lower() == '/checkpoints':
+                if not checkpoints:
+                    console.print("[dim]No checkpoints recorded yet.[/dim]\n")
+                else:
+                    from rich.table import Table
+                    tbl = Table(title="Checkpoints", header_style="bold cyan", show_lines=True)
+                    tbl.add_column("#", style="dim", width=4)
+                    tbl.add_column("Task")
+                    tbl.add_column("Files touched", style="cyan")
+                    for i, cp in enumerate(checkpoints, 1):
+                        files = "\n".join(os.path.basename(p) for p in cp["files"]) or "—"
+                        tbl.add_row(str(i), cp["task"], files)
+                    console.print(tbl)
+                    console.print()
+                continue
+
             # Build the message list for this turn: compacted history + new message
+            reset_turn_snapshot()
+            history_len_before = len(history)
             history.append(HumanMessage(content=user_input))
             messages_to_send = compact_history(history)
 
@@ -381,6 +427,13 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
                                 final_answer = msg.content
             finally:
                 spinner.stop()
+
+            # Save checkpoint for this turn so it can be rolled back
+            checkpoints.append({
+                "task":        user_input,
+                "history_len": history_len_before,
+                "files":       get_turn_snapshot(),
+            })
 
             # Append the response to history so future turns have context
             if final_answer:

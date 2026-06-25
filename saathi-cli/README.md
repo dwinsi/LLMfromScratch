@@ -254,6 +254,9 @@ When a context scope is set, the system prompt tells the agent to prefer those p
 | `/memory delete <scope> <key>` | Delete a fact |
 | `/memory clear <scope>` | Wipe all facts from a scope |
 | `clear` | Reset conversation history (keeps scope and memory) |
+| `/rollback` | Undo the last turn — restores any files the agent changed and removes the turn from history |
+| `/rollback <n>` | Undo the last n turns |
+| `/checkpoints` | List all turns and which files each one touched |
 | `help` | Show command reference |
 | `quit` / `exit` | End the session |
 
@@ -264,6 +267,77 @@ python cli.py --model gemma4:27b
 python cli.py --context ./src ./lib/utils.py
 python cli.py --model gemma4:4b --context ./experiments
 ```
+
+---
+
+## Rollback
+
+Every turn is checkpointed before the agent runs. If you don't like what the agent did — it rewrote a file incorrectly, went in the wrong direction, or just made a mess — you can undo it.
+
+### How it works
+
+Before each turn, saathi snapshots the original content of every file the agent is about to touch. After the turn completes, that snapshot is saved alongside the position in conversation history. Rolling back replays those snapshots in reverse.
+
+- Files the agent **edited** are restored to their content before the turn.
+- Files the agent **created** are deleted.
+- The turn's messages are removed from conversation history so the agent has no memory of the undone work.
+
+Shell commands (`run_bash`) are **not** reversible — installs, git commits, and other side effects happen outside saathi's control.
+
+### Commands
+
+```text
+You: /rollback
+You: /rollback 3
+You: /checkpoints
+```
+
+| Command | What it does |
+| --- | --- |
+| `/rollback` | Undo the last turn |
+| `/rollback <n>` | Undo the last n turns |
+| `/checkpoints` | Show a table of every recorded turn and which files it touched |
+
+### Example
+
+```text
+You: Refactor utils.py to use dataclasses
+
+⚙ read_file(file_path='utils.py')
+⚙ write_file(file_path='utils.py', ...)
+
+────────────── saathi ──────────────
+Done. Converted three classes to dataclasses.
+
+You: Actually that broke something, undo it
+
+You: /rollback
+  restored  /path/to/utils.py
+Rolled back 1 turn.
+
+You: /rollback 2       ← undo two turns at once
+  restored  /path/to/utils.py
+  deleted   /path/to/new_helper.py
+Rolled back 2 turns.
+```
+
+### Checkpoints table
+
+`/checkpoints` shows you what is available to roll back before you commit to it:
+
+```text
+┌─────────────────────────────────────────────┐
+│ Checkpoints                                 │
+├──┬──────────────────────────────┬───────────┤
+│ #│ Task                         │ Files     │
+├──┼──────────────────────────────┼───────────┤
+│ 1│ Read agent.py and explain... │ —         │
+│ 2│ Refactor utils.py to use ... │ utils.py  │
+│ 3│ Create a helper module       │ helper.py │
+└──┴──────────────────────────────┴───────────┘
+```
+
+Turns that only read files or ran bash commands show `—` in the Files column — there is nothing to restore for those turns, but rolling back still removes them from conversation history.
 
 ---
 

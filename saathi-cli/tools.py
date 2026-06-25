@@ -24,10 +24,25 @@ from memory_store import MemoryStore
 # Injected at startup by cli.py once the project directory is known.
 _memory_store: MemoryStore | None = None
 
+# Tracks original file contents before writes in the current turn.
+# filepath -> original content string, or None if the file did not exist.
+_turn_snapshot: dict[str, str | None] = {}
+
 
 def set_memory_store(store: MemoryStore) -> None:
     global _memory_store
     _memory_store = store
+
+
+def reset_turn_snapshot() -> None:
+    """Clear the snapshot at the start of each new turn."""
+    global _turn_snapshot
+    _turn_snapshot = {}
+
+
+def get_turn_snapshot() -> dict[str, str | None]:
+    """Return a copy of the current turn's file snapshot."""
+    return dict(_turn_snapshot)
 
 
 @tool
@@ -62,13 +77,22 @@ def write_file(file_path: str, content: str) -> str:
     """
     try:
         file_path = os.path.expanduser(file_path)
+        abs_path  = os.path.abspath(file_path)
+
+        # Snapshot original content before overwriting (once per turn per file).
+        if abs_path not in _turn_snapshot:
+            if os.path.exists(abs_path):
+                with open(abs_path, 'r', encoding='utf-8', errors='replace') as f:
+                    _turn_snapshot[abs_path] = f.read()
+            else:
+                _turn_snapshot[abs_path] = None  # file is new — rollback should delete it
 
         # Create parent directories if they do not exist
-        parent_directory = os.path.dirname(file_path)
+        parent_directory = os.path.dirname(abs_path)
         if parent_directory:
             os.makedirs(parent_directory, exist_ok=True)
 
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(abs_path, 'w', encoding='utf-8') as f:
             f.write(content)
 
         return f"Successfully wrote {len(content)} characters to '{file_path}'"
