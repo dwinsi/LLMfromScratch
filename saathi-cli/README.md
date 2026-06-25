@@ -145,10 +145,11 @@ sequenceDiagram
 
 ```text
 saathi-cli/
-├── cli.py            terminal UI, spinner, streaming, all slash commands, session save/restore
+├── cli.py            main loop, banner, help, agent streaming, arg parsing
+├── commands.py       one handler per slash command, SessionState dataclass, ThinkingSpinner
 ├── agent.py          LLM connection, context window config, build_agent(), compact_history()
-├── system_prompt.py  agent persona, context-scope injection, memory injection
-├── tools.py          nine tool definitions (read, write, patch, list, bash, search, search_across, save_memory, recall_memory)
+├── system_prompt.py  agent persona, mode presets, context-scope injection, memory injection
+├── tools.py          ten tool definitions (read, write, patch, list, bash, search, search_across, search_web, save_memory, recall_memory)
 ├── memory_store.py   persistent memory — global (~/.saathi/) and project-level (.saathi/)
 ├── requirements.txt  Python dependencies
 └── README.md         this file
@@ -156,9 +157,10 @@ saathi-cli/
 
 | File | What it owns |
 | --- | --- |
-| `cli.py` | Everything the user sees and types. Spinner, streaming output, all slash commands, session save/restore, `/diff`, `/export`, `/copy`, `/paste`, `/model`. |
+| `cli.py` | The main loop, banner, help text, agent streaming with Live Markdown, and `__main__` entry point. Thin by design — dispatches every slash command to `commands.py`. |
+| `commands.py` | One handler function per slash command. `SessionState` dataclass holds all mutable session variables. `ThinkingSpinner` and display helpers live here too. |
 | `agent.py` | Connects to Ollama, accepts a `model_id` parameter, sets context window size, builds the LangGraph agent, compacts history. |
-| `system_prompt.py` | Agent identity, behavioural rules, context-scope injection, memory injection. |
+| `system_prompt.py` | Agent identity, behavioural rules, `MODE_ADDENDA` for `/mode` presets, context-scope and memory injection. |
 | `tools.py` | Each `@tool` function is a discrete capability. Add new tools here — the agent discovers them automatically. |
 | `memory_store.py` | Reads and writes `memory.json` files at global and project scope. Independent of LangChain. |
 
