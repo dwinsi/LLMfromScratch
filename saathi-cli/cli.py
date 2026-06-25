@@ -153,6 +153,7 @@ def print_help():
 | `/context <path> ...` | Scope agent to specific files or folders |
 | `/context` | Clear scope — agent works unrestricted |
 | `clear` | Reset conversation history (keeps scope and memory) |
+| `/compact` | Summarise conversation history with the LLM — frees tokens while keeping context |
 | `/rollback` | Undo the last turn — restores files and removes it from history |
 | `/rollback <n>` | Undo the last n turns |
 | `/checkpoints` | List all recorded turns and which files each one touched |
@@ -293,6 +294,49 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
                 history = []
                 agent_executor = build_agent(llm, context_paths or None, memory.format_for_prompt(), current_mode)
                 console.print("[dim]Conversation cleared.[/dim]\n")
+                continue
+
+            if user_input.lower() == '/compact':
+                if not history:
+                    console.print("[dim]Nothing to compact — conversation is empty.[/dim]\n")
+                    continue
+                msgs_before = len(history)
+                console.print("[dim]Compacting conversation…[/dim]")
+                compact_spinner = ThinkingSpinner()
+                compact_spinner.start()
+                try:
+                    history_text = "\n\n".join(
+                        f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content}"
+                        for m in history
+                    )
+                    summarise_prompt = (
+                        "Summarise the following conversation between a developer and a coding assistant. "
+                        "Your summary will replace the full history so the assistant can continue the session "
+                        "with less context. Preserve everything that matters:\n"
+                        "- Every file that was read, created, or modified (include file names and what changed)\n"
+                        "- Every decision made and the reasoning behind it\n"
+                        "- Any errors encountered and how they were resolved\n"
+                        "- Any facts or preferences the user stated\n"
+                        "- The current state of the work (what is done, what is still pending)\n\n"
+                        "Be concise but complete. Use bullet points. Do not omit file names or code details.\n\n"
+                        f"Conversation:\n{history_text}"
+                    )
+                    response      = llm.invoke([HumanMessage(content=summarise_prompt)])
+                    summary       = response.content.strip()
+                    history       = [HumanMessage(content=f"[Conversation summary]\n{summary}")]
+                finally:
+                    compact_spinner.stop()
+                msgs_after = len(history)
+                console.print(
+                    f"[green]Compacted[/green] {msgs_before} message(s) → {msgs_after} summary message.\n"
+                )
+                console.print(Panel(
+                    Markdown(summary),
+                    title="[dim]summary[/dim]",
+                    border_style="dim",
+                    padding=(0, 1),
+                ))
+                console.print()
                 continue
 
             if user_input.lower().startswith('/context'):

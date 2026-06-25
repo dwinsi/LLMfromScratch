@@ -272,6 +272,7 @@ When a context scope is set, the system prompt tells the agent to prefer those p
 | `/memory delete <scope> <key>` | Delete a fact |
 | `/memory clear <scope>` | Wipe all facts from a scope |
 | `clear` | Reset conversation history (keeps scope and memory) |
+| `/compact` | Summarise history with the LLM — frees tokens while preserving context |
 | `/rollback` | Undo the last turn — restores any files the agent changed and removes the turn from history |
 | `/rollback <n>` | Undo the last n turns |
 | `/checkpoints` | List all turns and which files each one touched |
@@ -456,6 +457,46 @@ Using `/context` also clears the conversation history (but keeps memory), since 
 ---
 
 ## New features
+
+### Compact — `/compact`
+
+Summarises the entire conversation history using the LLM and replaces it with a single condensed message. Tokens are freed without losing context — unlike `clear` (which discards everything) or the silent auto-trim (which drops the oldest messages).
+
+```text
+You: /compact
+Compacting conversation…
+
+Compacted 14 message(s) → 1 summary message.
+
+╭─ summary ────────────────────────────────────────────╮
+│ ## Session summary                                   │
+│                                                      │
+│ - Read `tools.py` — 9 tools, noted `patch_file` and │
+│   `search_across_files` were recently added          │
+│ - Modified `cli.py`: added `/compact` command after  │
+│   the `clear` handler                                │
+│ - `requirements.txt` updated with `duckduckgo-search`│
+│ - Pending: update README with new features           │
+╰──────────────────────────────────────────────────────╯
+```
+
+The summary is shown immediately so you can verify nothing important was lost. The session continues normally — the agent uses the summary as its history from that point.
+
+**When to use it:**
+
+- After a long debugging session before switching to a new task
+- When the spinner slows noticeably (a sign the context window is filling up)
+- Before `/session save` to keep the saved file compact
+
+**Difference from `clear`:**
+
+| Command | What it does | Context preserved |
+| --- | --- | --- |
+| `clear` | Wipes history entirely | None |
+| `/compact` | Summarises history with the LLM | Yes — files, decisions, errors, state |
+| Auto-trim | Silently drops oldest messages | Partially — recent turns only |
+
+---
 
 ### Streaming output
 
