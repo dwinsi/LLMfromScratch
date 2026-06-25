@@ -13,13 +13,51 @@ This is not a replacement for Claude Code or GitHub Copilot. It is a transparent
 ### Component map
 
 ```mermaid
-graph TD
-    Memory --> Prompt
-    Prompt --> Agent
-    Tools --> Agent
-    Agent --> Ollama
-    Agent --> CLI
-    CLI --> User
+graph LR
+    USER[User]
+    OLLAMA[Ollama]
+
+    subgraph mem [Memory Store]
+        GLOBAL[global]
+        PROJECT[project]
+    end
+
+    subgraph prompt [System Prompt]
+        SP[build prompt]
+    end
+
+    subgraph tools [Tools]
+        FTOOL[file tools]
+        MTOOL[memory tools]
+    end
+
+    subgraph agent [Agent]
+        BUILD[build agent]
+        STREAM[stream]
+    end
+
+    subgraph cli [CLI]
+        INPUT[input]
+        HISTORY[history]
+        SPINNER[spinner]
+        RENDERER[renderer]
+    end
+
+    GLOBAL --> SP
+    PROJECT --> SP
+    SP --> BUILD
+    FTOOL --> BUILD
+    MTOOL --> BUILD
+    MTOOL --> GLOBAL
+    MTOOL --> PROJECT
+    BUILD --> STREAM
+    STREAM --> OLLAMA
+
+    USER --> INPUT
+    INPUT --> HISTORY
+    HISTORY --> STREAM
+    STREAM --> SPINNER
+    STREAM --> RENDERER
 ```
 
 ### Request flow — one turn
