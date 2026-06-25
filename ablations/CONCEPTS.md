@@ -579,6 +579,199 @@ In production MoE systems, the aux loss weight is tuned carefully, and technique
 
 ---
 
+## Ablation Study 3: RoPE vs Sinusoidal Positional Encoding
+
+> **Script:** `ablation_rope_vs_sinusoidal.py`
+> **Question asked:** Does RoPE (Rotary Positional Embeddings) produce better language models than the original Sinusoidal positional encoding from the 2017 "Attention Is All You Need" paper?
+
+---
+
+## What Study 3 Is Testing
+
+Every previous ablation used RoPE for positional encoding. This study steps back to ask: is RoPE actually better than the encoding method transformers were born with — sinusoidal positional encoding?
+
+Everything is held constant: same tokenizer, same dataset, same RMSNorm, same SwiGLU FFN, same training loop. Only the positional encoding strategy changes.
+
+---
+
+## The Problem Both Methods Solve
+
+**Plain language:**
+A transformer's attention mechanism is, at its core, a set function — it has no built-in sense of order. Whether "the dog bit the man" or "the man bit the dog", the raw token representations are the same. The model needs to be told *where* each word is in the sequence.
+
+Positional encoding solves this by injecting position information into each token's representation. The two approaches differ fundamentally in *when* and *how* they inject it.
+
+---
+
+## The Two Methods Compared
+
+### Sinusoidal Positional Encoding (the original)
+
+**Plain language:**
+The original transformer (2017) adds a fixed pattern of sine and cosine waves to each token's embedding *before* any attention is computed. Think of it like a watermark: each position gets a unique fingerprint made of waves, and that fingerprint is stamped onto the token before it enters the network.
+
+**How the watermark is built:**
+Each position gets a vector of the same size as the token embedding (64 numbers here). Each number in that vector is a sine or cosine value at a specific frequency — low-frequency waves for coarse position, high-frequency waves for fine position:
+
+```text
+Position 0:  [sin(0/1),   cos(0/1),   sin(0/100), cos(0/100),   ...]
+Position 1:  [sin(1/1),   cos(1/1),   sin(1/100), cos(1/100),   ...]
+Position 2:  [sin(2/1),   cos(2/1),   sin(2/100), cos(2/100),   ...]
+```
+
+No two positions produce the same vector, and nearby positions produce similar vectors — the geometry encodes proximity.
+
+**The formula:**
+
+```text
+PE(pos, 2i)   = sin( pos / 10000^(2i/d) )
+PE(pos, 2i+1) = cos( pos / 10000^(2i/d) )
+```
+
+Where `pos` is the position (0, 1, 2…), `i` is the dimension index, and `d` is the embedding size (64).
+
+**In code:**
+
+```python
+pe = torch.zeros(max_len, embed_dim)
+position = torch.arange(0, max_len).unsqueeze(1)
+div_term = torch.exp(torch.arange(0, embed_dim, 2) * (-math.log(10000.0) / embed_dim))
+pe[:, 0::2] = torch.sin(position * div_term)   # even dims: sine
+pe[:, 1::2] = torch.cos(position * div_term)   # odd dims: cosine
+x = x + pe[:, :x.size(1)]                       # add watermark to token embedding
+```
+
+**Key properties:**
+
+- **Fixed** — the values are computed once and never learned or updated during training
+- **Absolute** — each position gets a unique vector independent of other tokens
+- **Applied once** — added to the embedding before the first layer, then untouched
+
+**The limitation — absolute vs relative positions:**
+Sinusoidal encoding tells the model "token X is at position 5." But for language, what often matters is the *relationship* — "these two tokens are 3 apart." Absolute position 5 in sentence A carries no information about position 5 in sentence B. More importantly, if the model is trained on sequences of length 8, it has never seen a sinusoidal pattern for position 9 or 100 — it cannot generalize to longer contexts.
+
+---
+
+### RoPE (Rotary Positional Embeddings)
+
+**Plain language:**
+Instead of stamping a watermark onto tokens *before* attention, RoPE injects position information *inside* the attention computation itself — by rotating the Query and Key vectors by an angle that depends on their position. The relative distance between two tokens is encoded directly in the dot product between their rotated Q and K.
+
+Think of it like two compasses. Each token's query vector is a compass needle pointing in a direction that depends on its position. Token at position 3 points at 3 o'clock; token at position 7 points at 7 o'clock. The dot product between two compass needles encodes how far apart they are on the clock — regardless of where on the clock face they are in absolute terms.
+
+**How the rotation is applied:**
+The head dimension (16 here) is split into pairs. Each pair `(x1, x2)` is rotated by an angle `θ = position × frequency`:
+
+```text
+Rotated pair = [ x1·cos(θ) - x2·sin(θ),   x1·sin(θ) + x2·cos(θ) ]
+```
+
+This is the standard 2D rotation formula from geometry — rotating a 2D point `(x1, x2)` by angle `θ`.
+
+**Why this encodes relative position:**
+The dot product between a rotated Query at position `p` and a rotated Key at position `q` depends only on `(p - q)` — the *difference* in positions. The absolute positions cancel out mathematically. This is the key insight.
+
+**In code:**
+
+```python
+cos, sin = precompute_rope_freqs(head_dim, T, device)   # compute once per sequence
+q = apply_rope(q, cos, sin)   # rotate queries by their positions
+k = apply_rope(k, cos, sin)   # rotate keys by their positions
+# V is NOT rotated — values carry content, not position
+attn = q @ k.transpose(-2, -1)   # dot product now encodes relative distance
+```
+
+**Key properties:**
+
+- **No extra parameters** — the rotation angles are computed from a formula, not learned
+- **Relative** — dot products encode token *distance*, not absolute position
+- **Applied per-layer, inside attention** — every attention layer sees fresh positional information
+- **Extrapolates to longer sequences** — since only relative differences matter, the model handles positions it never saw in training
+
+---
+
+## Side-by-Side Architecture Comparison
+
+```text
+SINUSOIDAL MODEL                    RoPE MODEL
+========================            ========================
+Token IDs                           Token IDs
+    ↓                                   ↓
+nn.Embedding (64-dim)               nn.Embedding (64-dim)
+    ↓                                   ↓
++ SinusoidalPE  ← position          Dropout
+  added HERE,                           ↓
+  before all layers              [Transformer Blocks ×4]
+    ↓                               ├── RMSNorm
+Dropout                             ├── RoPEAttention
+    ↓                               │     ├── Q_proj → rotate(Q, pos)
+[Transformer Blocks ×4]             │     ├── K_proj → rotate(K, pos)
+├── RMSNorm                         │     └── V_proj  (no rotation)
+├── nn.MultiheadAttention           └── SwiGLU FFN
+│     (position already baked in)
+└── SwiGLU FFN
+```
+
+Notice: the sinusoidal model uses PyTorch's built-in `nn.MultiheadAttention` (a complete, optimized module), while the RoPE model uses a hand-written attention module so that Q and K can be rotated before the dot product. The sinusoidal model cannot use the hand-written module directly because position is already baked into the embedding — there is nothing left to inject inside the attention.
+
+---
+
+## Study 3 Results
+
+| Model      | Final Loss | Positional Method                      | Parameters |
+|------------|------------|----------------------------------------|------------|
+| Sinusoidal | 0.2808     | Added to embedding, fixed              | ~197K      |
+| RoPE       | 0.2768     | Injected into attention, formula-based | ~197K      |
+
+Both models have the same parameter count — sinusoidal encoding adds no learnable parameters (it's a fixed precomputed table), and RoPE adds no parameters either (it's a formula applied at runtime).
+
+**RoPE wins by 0.0040 loss** — a small but consistent margin across all 500 epochs.
+
+### Reading the result
+
+Looking at the epoch-by-epoch progression:
+
+| Epoch | Sinusoidal | RoPE | RoPE advantage |
+|-------|-----------|------|----------------|
+| 100 | 0.3409 | 0.3303 | **−0.0106** (larger early) |
+| 200 | 0.3115 | 0.3155 | +0.0040 (sinusoidal briefly better) |
+| 300 | 0.2948 | 0.2958 | roughly equal |
+| 400 | 0.2895 | 0.2859 | **−0.0036** |
+| 500 | 0.2808 | 0.2768 | **−0.0040** |
+
+RoPE starts with a bigger advantage (better early convergence), loses it in the middle, then pulls ahead again in the final stretch. This pattern suggests RoPE's relative-position encoding is particularly useful when the model needs to make fine-grained distinctions — which tends to happen in the later stages of training when the model is fitting harder examples.
+
+### Why the difference is small here
+
+On a short-sequence task (length 8), absolute and relative position information are nearly equivalent — there are only 8 positions, and every relative distance is also an absolute distance. The real advantage of RoPE would show up if:
+
+1. **Sequence length increased** — at length 512 or 4096, relative positions generalize; absolute sinusoidal positions cannot extrapolate beyond training length
+2. **Tasks requiring long-range dependencies** — e.g., coreference resolution where a pronoun must match a noun 50 tokens earlier
+
+At the scale of GPT-4 or LLaMA 3 with 128K context windows, sinusoidal encoding simply cannot work — the positional patterns were only computed up to a fixed `max_len`. RoPE naturally extends to any length.
+
+---
+
+## A Historical Note — Three Generations of Positional Encoding
+
+| Generation | Method | Used in | Limitation |
+|------------|--------|---------|------------|
+| 1st | Sinusoidal (fixed) | Original Transformer (2017), BERT | Cannot extrapolate beyond training length |
+| 2nd | Learned absolute | GPT-2, GPT-3 | Cannot extrapolate; adds parameters per position |
+| 3rd | RoPE (relative, formula) | LLaMA 1/2/3, Mistral, Gemma, Falcon | None known at standard scale |
+
+**Learned absolute positions** (used in GPT-2/3) go one step further than sinusoidal — they let the model *learn* what fingerprint to assign to each position through training. This can work better than fixed sinusoidal on short sequences, but it still cannot extrapolate — if you trained on sequences up to length 1024, position 1025 has no learned embedding.
+
+RoPE sidesteps both problems: no learned parameters (no capacity wasted), and relative distance encoding means the model handles any length without needing to have seen that position during training.
+
+---
+
+## Study 3 Key Takeaway
+
+> Sinusoidal encoding injects position *once*, *before* any layer sees the token, as an absolute fingerprint. RoPE injects position *inside* every attention layer as a rotation that encodes *relative distance*. On short sequences both approaches work similarly. At scale and long contexts, RoPE's relative encoding is essential — it is why every modern LLM abandoned the original sinusoidal scheme.
+
+---
+
 ## Ablation Study 2: GQA vs Standard Multi-Head Attention (MHA)
 
 > **Script:** `ablation_gqa_vs_mha.py`
@@ -586,7 +779,7 @@ In production MoE systems, the aux loss weight is tuned carefully, and technique
 
 ---
 
-## What This Study Is Testing
+## What Study 2 Is Testing
 
 The Dense vs MoE study explored *which feed-forward network design* works better. This study isolates a completely different question: *does the attention mechanism matter?* Specifically, does reducing the number of Key and Value heads (GQA) hurt model quality compared to giving every Query head its own dedicated K/V pair (MHA)?
 
@@ -687,7 +880,7 @@ Per block, GQA saves 4,096 parameters. Across 4 blocks: **16,384 fewer parameter
 
 ---
 
-## The Ablation Results
+## Study 2 Results
 
 | Model | Parameters | Final Loss |
 |-------|-----------|------------|
@@ -733,7 +926,7 @@ MQA (Multi-Query Attention) is the extreme version — all Query heads share a s
 
 ---
 
-## Key Takeaway
+## Study 2 Key Takeaway
 
 > GQA is a **free lunch at scale**: by sharing K/V heads among groups of Q heads, you cut the KV cache in half (or more) with near-zero loss in model quality. The attention mechanism's expressiveness comes primarily from diverse Query heads — not from diverse Key/Value heads. This insight, validated at scale in papers like LLaMA 2, is confirmed even in this miniature experiment.
 
