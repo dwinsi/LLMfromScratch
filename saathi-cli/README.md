@@ -14,33 +14,40 @@ This is not a replacement for Claude Code or GitHub Copilot. It is a transparent
 
 ```mermaid
 graph LR
-    USER[User]
-    OLLAMA[Ollama]
+    classDef cExt  fill:#334155,stroke:#64748b,color:#f1f5f9
+    classDef cMem  fill:#6d28d9,stroke:#7c3aed,color:#f5f3ff
+    classDef cPmt  fill:#1d4ed8,stroke:#2563eb,color:#eff6ff
+    classDef cTool fill:#b45309,stroke:#d97706,color:#fffbeb
+    classDef cAgt  fill:#065f46,stroke:#059669,color:#ecfdf5
+    classDef cCli  fill:#0e7490,stroke:#0891b2,color:#ecfeff
+
+    USER[User]:::cExt
+    OLLAMA[Ollama]:::cExt
 
     subgraph mem [Memory Store]
-        GLOBAL[global]
-        PROJECT[project]
+        GLOBAL[global]:::cMem
+        PROJECT[project]:::cMem
     end
 
     subgraph prompt [System Prompt]
-        SP[build prompt]
+        SP[build prompt]:::cPmt
     end
 
     subgraph tools [Tools]
-        FTOOL[file tools]
-        MTOOL[memory tools]
+        FTOOL[file tools]:::cTool
+        MTOOL[memory tools]:::cTool
     end
 
     subgraph agent [Agent]
-        BUILD[build agent]
-        STREAM[stream]
+        BUILD[build agent]:::cAgt
+        STREAM[stream]:::cAgt
     end
 
     subgraph cli [CLI]
-        INPUT[input]
-        HISTORY[history]
-        SPINNER[spinner]
-        RENDERER[renderer]
+        INPUT[input]:::cCli
+        HISTORY[history]:::cCli
+        SPINNER[spinner]:::cCli
+        RENDERER[renderer]:::cCli
     end
 
     GLOBAL --> SP
@@ -59,6 +66,41 @@ graph LR
     STREAM --> SPINNER
     STREAM --> RENDERER
 ```
+
+#### Blocks
+
+| Block | What it is |
+| --- | --- |
+| **User** | You — typing tasks and reading responses in the terminal. |
+| **Ollama** | The local LLM server. Runs Gemma 4 on your machine. The agent sends chat requests here and streams tokens back. |
+| **Memory Store** | Two persistent JSON files. `global` lives at `~/.saathi/memory.json` and holds facts that apply across all projects (preferred style, language). `project` lives at `.saathi/memory.json` inside the current folder and holds project-specific facts (entry point, stack, key files). |
+| **System Prompt** | `build_system_prompt()` assembles the agent's identity, behavioural rules, optional context-scope paths, and the current memory block into a single string that heads every conversation. |
+| **Tools — file tools** | `read_file`, `write_file`, `list_directory`, `run_bash`, `search_in_file`. Each is a `@tool` function the agent can call to interact with the filesystem and shell. |
+| **Tools — memory tools** | `save_memory` and `recall_memory`. Let the agent read and write facts to the memory store during a session, so useful discoveries persist across restarts. |
+| **Agent — build agent** | `build_agent()` wires the LLM, tools, and system prompt into a LangGraph `CompiledStateGraph`. Called once at startup and again whenever the context scope or memory changes. |
+| **Agent — stream** | The running ReAct loop. Sends the message history to Ollama, receives tool calls and observations in a loop, and emits chunks back to the CLI as they arrive. |
+| **CLI — input** | `Prompt.ask()` — reads the user's task from the terminal. Also handles slash commands (`/context`, `/memory`) before they reach the agent. |
+| **CLI — history** | The growing list of `HumanMessage` and `AIMessage` objects for the session. `compact_history()` trims the oldest messages before each call so the conversation always fits within the context window. |
+| **CLI — spinner** | `ThinkingSpinner` — a background thread that cycles through 70+ phrases while the model is generating. Updates to show the active tool name when the agent picks a tool. |
+| **CLI — renderer** | Prints tool observations in dim bordered panels and renders the final answer as full Markdown (headers, tables, code blocks) using Rich. |
+
+#### Edges
+
+| Edge | What flows |
+| --- | --- |
+| `global / project → build prompt` | Saved facts are formatted into a memory block and injected into the system prompt at startup. |
+| `build prompt → build agent` | The assembled system prompt string is passed into `build_agent()` so the agent knows its identity and remembered facts before the first message. |
+| `file tools / memory tools → build agent` | The full tool list is registered with the agent at build time. The agent discovers tool names and docstrings automatically — no extra wiring needed. |
+| `memory tools → global / project` | During a session the agent can call `save_memory` and `recall_memory` to read and write the JSON files directly. |
+| `build agent → stream` | `build_agent()` returns the compiled LangGraph graph. `stream()` on that graph runs the ReAct loop. |
+| `stream → Ollama` | Each iteration of the loop sends the current message list to Ollama as a chat request and reads back a token stream. |
+| `User → input` | The user presses Enter; the terminal captures the text. |
+| `input → history` | The new `HumanMessage` is appended to the session history list. |
+| `history → stream` | `compact_history()` trims the list to 75% of the context window, then the trimmed messages are sent into the stream. |
+| `stream → spinner` | When the agent emits a tool call chunk, the spinner updates to show the tool name and arguments. |
+| `stream → renderer` | Tool observations are printed as panels as they arrive. The final answer is rendered as Markdown once the stream ends. |
+
+---
 
 ### Request flow — one turn
 
@@ -81,6 +123,21 @@ sequenceDiagram
     CLI->>User: render response
     CLI->>Mem: save if useful
 ```
+
+#### Steps
+
+| Step | What happens |
+| --- | --- |
+| `CLI → Mem: load memory` | At startup, `MemoryStore` reads both JSON files. Global facts and project facts are merged, with project facts taking priority for the same key. |
+| `Mem → CLI: memory block` | The facts are formatted as a plain-text block (`key: value` lines) ready to be injected into the system prompt. |
+| `CLI → Agent: build with memory` | `build_agent()` is called with the memory block. The system prompt now contains the agent's identity, any context-scope paths, and all remembered facts. |
+| `User → CLI: task` | You type a task and press Enter. Slash commands are handled here before the agent sees anything. |
+| `CLI → Agent: message history` | `compact_history()` trims the session history to fit 75% of the 32k context window, always keeping the system prompt and the most recent messages. The trimmed list is passed to `agent.stream()`. |
+| `Agent → Ollama: chat request` | LangGraph sends the message list to Ollama's `/api/chat` endpoint. Gemma 4 receives the system prompt, conversation history, tool definitions, and your task. |
+| `Ollama → Agent: response` | Gemma streams tokens back. If the response contains a tool call, LangGraph intercepts it, executes the tool, appends the observation, and sends another request. This loop repeats until Gemma produces a plain text answer. |
+| `Agent → CLI: final answer` | The last message in the stream with no tool calls is the final answer. It arrives as a text chunk. |
+| `CLI → User: render response` | Rich renders the answer as full Markdown — headers, code blocks, tables, and inline formatting — under a cyan rule. |
+| `CLI → Mem: save if useful` | If the agent called `save_memory` during the turn, the new fact is already written to the JSON file and will be available in every future session. |
 
 ---
 
