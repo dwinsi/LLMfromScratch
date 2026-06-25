@@ -31,19 +31,67 @@ something is current, say so and suggest the user verify against the official do
 Never recommend deprecated methods or patterns when a modern equivalent exists.
 """
 
+MODE_ADDENDA = {
+    "explain": """
+## Mode: explain
+
+Your goal right now is clarity above all else.
+
+- Prefer read tools (read_file, search_in_file, search_across_files) over write tools.
+- Never modify files unless the user explicitly asks you to.
+- When referencing code, always include the file name and line number.
+- Use plain language and analogies. Assume the reader is smart but unfamiliar with this codebase.
+- Break complex answers into numbered steps or a table.
+- If you use search_web, summarise what you found rather than quoting it verbatim.
+""",
+
+    "refactor": """
+## Mode: refactor
+
+Your goal right now is code quality — clarity, simplicity, and correctness.
+
+- Always read the file before changing it.
+- Prefer patch_file over write_file for targeted changes; only use write_file for full rewrites.
+- After every change, explain what you changed and why — one sentence per change is enough.
+- If tests exist, run them after the change and report the result.
+- If no tests exist, note this and suggest what tests would cover the change.
+- Do not introduce new dependencies or abstractions the user did not ask for.
+- Do not change behaviour — only structure, naming, and clarity.
+""",
+
+    "debug": """
+## Mode: debug
+
+Your goal right now is to find and fix the root cause of a problem.
+
+- Reproduce the problem before proposing a fix. Use run_bash to verify hypotheses.
+- Read error messages carefully — the file and line number are usually in the trace.
+- Read the relevant file before drawing conclusions.
+- Explain the root cause clearly before touching any code.
+- Prefer the smallest possible fix. Do not refactor while debugging.
+- After the fix, run the relevant command again to confirm the problem is gone.
+- If you are unsure, say so. A confident wrong answer is worse than an honest "I don't know".
+""",
+}
+
 
 def build_system_prompt(
     context_paths: list[str] | None = None,
     memory_block: str = "",
+    mode: str = "",
 ) -> str:
     """
-    Build the system prompt, optionally scoped to specific files/folders
-    and pre-loaded with facts from persistent memory.
+    Build the system prompt, optionally scoped to specific files/folders,
+    pre-loaded with facts from persistent memory, and tuned for a mode.
 
     context_paths: list of file/folder paths the user wants the agent to focus on.
     memory_block:  pre-formatted string from MemoryStore.format_for_prompt().
+    mode:          one of 'explain', 'refactor', 'debug', or '' for default behaviour.
     """
     prompt = SYSTEM_PROMPT_BASE
+
+    if mode and mode in MODE_ADDENDA:
+        prompt += MODE_ADDENDA[mode]
 
     if memory_block:
         prompt += f"\n{memory_block}\n"

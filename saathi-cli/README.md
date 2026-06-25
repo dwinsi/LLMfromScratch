@@ -75,14 +75,14 @@ graph LR
 | **Ollama** | The local LLM server. Runs Gemma 4 on your machine. The agent sends chat requests here and streams tokens back. |
 | **Memory Store** | Two persistent JSON files. `global` lives at `~/.saathi/memory.json` and holds facts that apply across all projects (preferred style, language). `project` lives at `.saathi/memory.json` inside the current folder and holds project-specific facts (entry point, stack, key files). |
 | **System Prompt** | `build_system_prompt()` assembles the agent's identity, behavioural rules, optional context-scope paths, and the current memory block into a single string that heads every conversation. |
-| **Tools — file tools** | `read_file`, `write_file`, `list_directory`, `run_bash`, `search_in_file`. Each is a `@tool` function the agent can call to interact with the filesystem and shell. |
+| **Tools — file tools** | `read_file`, `write_file`, `patch_file`, `list_directory`, `run_bash`, `search_in_file`, `search_across_files`. Each is a `@tool` function the agent can call to interact with the filesystem and shell. |
 | **Tools — memory tools** | `save_memory` and `recall_memory`. Let the agent read and write facts to the memory store during a session, so useful discoveries persist across restarts. |
 | **Agent — build agent** | `build_agent()` wires the LLM, tools, and system prompt into a LangGraph `CompiledStateGraph`. Called once at startup and again whenever the context scope or memory changes. |
 | **Agent — stream** | The running ReAct loop. Sends the message history to Ollama, receives tool calls and observations in a loop, and emits chunks back to the CLI as they arrive. |
 | **CLI — input** | `Prompt.ask()` — reads the user's task from the terminal. Also handles slash commands (`/context`, `/memory`) before they reach the agent. |
 | **CLI — history** | The growing list of `HumanMessage` and `AIMessage` objects for the session. `compact_history()` trims the oldest messages before each call so the conversation always fits within the context window. |
 | **CLI — spinner** | `ThinkingSpinner` — a background thread that cycles through 70+ phrases while the model is generating. Updates to show the active tool name when the agent picks a tool. |
-| **CLI — renderer** | Prints tool observations in dim bordered panels and renders the final answer as full Markdown (headers, tables, code blocks) using Rich. |
+| **CLI — renderer** | Prints tool observations in dim bordered panels. Streams the final answer token-by-token as it arrives, falling back to full Markdown rendering when the model doesn't stream. |
 
 #### Edges
 
@@ -145,10 +145,10 @@ sequenceDiagram
 
 ```text
 saathi-cli/
-├── cli.py            terminal UI, spinner, rich rendering, history, /context command
+├── cli.py            terminal UI, spinner, streaming, all slash commands, session save/restore
 ├── agent.py          LLM connection, context window config, build_agent(), compact_history()
 ├── system_prompt.py  agent persona, context-scope injection, memory injection
-├── tools.py          seven tool definitions (read, write, list, bash, search, save_memory, recall_memory)
+├── tools.py          nine tool definitions (read, write, patch, list, bash, search, search_across, save_memory, recall_memory)
 ├── memory_store.py   persistent memory — global (~/.saathi/) and project-level (.saathi/)
 ├── requirements.txt  Python dependencies
 └── README.md         this file
@@ -156,8 +156,8 @@ saathi-cli/
 
 | File | What it owns |
 | --- | --- |
-| `cli.py` | Everything the user sees and types. Spinner, colour, `/context` flag, session history. |
-| `agent.py` | Connects to Ollama, sets context window size, builds the LangGraph agent, compacts history. |
+| `cli.py` | Everything the user sees and types. Spinner, streaming output, all slash commands, session save/restore, `/diff`, `/export`, `/copy`, `/paste`, `/model`. |
+| `agent.py` | Connects to Ollama, accepts a `model_id` parameter, sets context window size, builds the LangGraph agent, compacts history. |
 | `system_prompt.py` | Agent identity, behavioural rules, context-scope injection, memory injection. |
 | `tools.py` | Each `@tool` function is a discrete capability. Add new tools here — the agent discovers them automatically. |
 | `memory_store.py` | Reads and writes `memory.json` files at global and project scope. Independent of LangChain. |
@@ -170,9 +170,14 @@ saathi-cli/
 | --- | --- |
 | `read_file` | Read any file's full contents (up to 100 KB) |
 | `write_file` | Write or overwrite a file; creates parent directories |
+| `patch_file` | Apply a unified diff patch to a file without rewriting it |
 | `list_directory` | List files and folders with sizes |
 | `run_bash` | Execute a shell command, capture stdout + stderr |
 | `search_in_file` | Find text in a file, returns matching lines with line numbers |
+| `search_across_files` | Grep a pattern recursively across an entire directory |
+| `search_web` | Search the web via DuckDuckGo (or Brave with an API key) |
+| `save_memory` | Persist a fact to global or project memory |
+| `recall_memory` | Retrieve all saved facts from memory |
 
 ---
 
@@ -249,7 +254,20 @@ When a context scope is set, the system prompt tells the agent to prefer those p
 | `<any text>` | Run a task |
 | `/context <path> ...` | Scope agent to specific files or folders |
 | `/context` | Clear scope — agent works unrestricted |
-| `/memory list` | Show all saved facts |
+| `/paste` | Enter multi-line input mode (blank line to send, Ctrl+C to cancel) |
+| `/model <model-id>` | Switch to a different Ollama model mid-session |
+| `/mode explain` | Tune agent for clear explanations — prefers reads, never modifies files |
+| `/mode refactor` | Tune agent for code quality — explains every change, runs tests |
+| `/mode debug` | Tune agent for root-cause debugging — reproduces before fixing |
+| `/mode` | Show current mode |
+| `/mode off` | Clear mode — return to default behaviour |
+| `/diff` | Show a unified diff of every file changed in this session |
+| `/export` | Dump conversation history to a timestamped markdown file |
+| `/copy` | Copy the last agent response to the clipboard |
+| `/session save <name>` | Save the current session — history, context, and checkpoints |
+| `/session load <name>` | Restore a previously saved session |
+| `/session list` | List all saved sessions |
+| `/memory list` | Show all saved facts (global and project) |
 | `/memory save <scope> <key> <value>` | Manually save a fact |
 | `/memory delete <scope> <key>` | Delete a fact |
 | `/memory clear <scope>` | Wipe all facts from a scope |
@@ -437,6 +455,218 @@ Using `/context` also clears the conversation history (but keeps memory), since 
 
 ---
 
+## New features
+
+### Streaming output
+
+The agent's final answer streams progressively to the terminal using Rich's `Live` display — text appears as tokens arrive and is continuously re-rendered as proper Markdown. Headers, code blocks, bold, tables, and inline code all format correctly in real time rather than appearing as raw symbols. The spinner stops and the cyan rule prints the moment the first word is ready. Long code explanations and multi-section answers feel noticeably faster.
+
+---
+
+### Input history navigation
+
+Inside a session, the up and down arrow keys cycle through your previous inputs, the same as a regular shell. On Unix this uses the stdlib `readline` module. On Windows it uses `pyreadline3` (installed automatically via `requirements.txt`). If neither is available the session still works — you just lose the arrow-key navigation.
+
+---
+
+### Multi-line input — `/paste`
+
+When you need to give the agent a long prompt — a stack trace, a code snippet, a detailed spec — `/paste` opens a multi-line collector. Type or paste as many lines as you like, then press Enter on a blank line to send them all as one message. Press Ctrl+C to cancel.
+
+```text
+You: /paste
+Enter your message (blank line to send, Ctrl+C to cancel):
+Here is the error I'm seeing:
+
+AttributeError: 'NoneType' object has no attribute 'split'
+  File "parser.py", line 42, in parse_config
+
+The value comes from os.environ.get("CONFIG_PATH").
+                          ← blank line sends
+```
+
+---
+
+### Diff viewer — `/diff`
+
+Shows a colour-coded unified diff of every file the agent has changed since the session started. Diffs are computed from the checkpoint snapshots, so they reflect all edits across all turns — not just the last one.
+
+```text
+You: /diff
+
+────────────── /path/to/utils.py ──────────────
+  @@ -10,6 +10,8 @@
+   def parse():
+  -    return None
+  +    result = {}
+  +    return result
+```
+
+Files that were read but not changed do not appear. If nothing has changed, saathi says so.
+
+---
+
+### Export conversation — `/export`
+
+Dumps the full conversation history to a Markdown file in the current directory. Useful for archiving a debugging session, sharing a code walkthrough, or keeping a record of what the agent built.
+
+```text
+You: /export
+Exported conversation to: /path/to/saathi-export-20260626-143201.md
+```
+
+The file uses `## You` and `## Saathi` headers for each message, making it readable as a standalone document.
+
+---
+
+### Clipboard — `/copy`
+
+Copies the last agent response to the system clipboard so you can paste it straight into an editor, a PR description, or a chat window.
+
+```text
+You: /copy
+Last response copied to clipboard.
+```
+
+Requires `pyperclip` (in `requirements.txt`). Falls back gracefully in headless environments where no clipboard is available.
+
+---
+
+### Model switch — `/model`
+
+Swap the active Ollama model without restarting the session. The agent is rebuilt with the new model and conversation history is reset (old context from a different model would be misleading).
+
+```text
+You: /model gemma4:27b
+Switched to model: gemma4:27b — history reset.
+
+You: /model llama3.2:3b
+Switched to model: llama3.2:3b — history reset.
+```
+
+Any model served by Ollama works. Combine with `--model` at startup to set the initial model.
+
+---
+
+### Session save and restore — `/session`
+
+Save the full state of a session — conversation history, context scope, and file-change checkpoints — and restore it later. Sessions are stored as JSON in `.saathi/sessions/`.
+
+```text
+You: /session save my-refactor
+Session saved to: .saathi/sessions/my-refactor.json
+
+You: /session list
+┌──────────────┬─────────────────────┐
+│ Name         │ Saved at            │
+├──────────────┼─────────────────────┤
+│ my-refactor  │ 2026-06-26 14:32:01 │
+└──────────────┴─────────────────────┘
+
+You: /session load my-refactor
+Session loaded: my-refactor — 8 messages, 3 checkpoints.
+```
+
+On load, `/rollback` still works — the checkpoints are restored so you can undo any turn from the previous session.
+
+---
+
+### Patch file — `patch_file` tool
+
+The agent can now apply a targeted unified diff instead of rewriting an entire file. This uses fewer tokens, is easier to review, and produces a cleaner rollback diff.
+
+The agent uses `patch_file` when making a small, well-defined change to an existing file. It verifies context lines match before writing — if the file has drifted from what the patch expects, it returns a precise mismatch error rather than silently corrupting the file. The original is snapshotted for rollback just like `write_file`.
+
+---
+
+### Web search — `search_web` tool
+
+The agent can now look up library documentation, error messages, and API changes instead of relying on potentially stale training data. It uses DuckDuckGo by default (no API key, no setup). Set `BRAVE_API_KEY` in your environment to use Brave Search for higher-quality structured results.
+
+```text
+You: What is the correct way to use trim_messages in langchain-core 0.3?
+
+# agent calls:
+search_web("langchain-core trim_messages 0.3 usage")
+
+# returns top 5 results: title, URL, and snippet for each
+```
+
+The tool caps output at ~2000 characters to avoid flooding the context window. The agent summarises the results rather than quoting them verbatim.
+
+**Brave upgrade (optional):**
+
+```bash
+# Windows
+$env:BRAVE_API_KEY = "your-key-here"
+
+# Unix
+export BRAVE_API_KEY=your-key-here
+```
+
+Get a free key at [brave.com/search/api](https://brave.com/search/api) — the free tier covers 2,000 queries/month.
+
+---
+
+### Mode presets — `/mode`
+
+Switch the agent's behaviour for a specific task type without changing the model or clearing history. The mode appends a focused instruction block to the system prompt. The base persona (saathi's identity and tool access) stays intact.
+
+The current mode is shown in the input prompt: `You (debug):`.
+
+```text
+You: /mode explain
+Mode set: explain — agent rebuilt, history kept.
+
+You (explain): How does compact_history work?
+
+You: /mode refactor
+Mode set: refactor — agent rebuilt, history kept.
+
+You (refactor): Clean up the error handling in tools.py
+
+You: /mode debug
+Mode set: debug — agent rebuilt, history kept.
+
+You (debug): Why does /rollback sometimes leave files in a broken state?
+
+You: /mode off
+Mode cleared. — agent rebuilt, history kept.
+
+You: /mode
+Current mode: (none — default behaviour)
+```
+
+| Mode | What the agent prioritises |
+| --- | --- |
+| `explain` | Clarity. Reads only, never modifies. File + line citations on every code reference. Plain language. |
+| `refactor` | Code quality. Uses `patch_file` over `write_file`. Explains each change. Runs tests and reports results. |
+| `debug` | Root cause. Reproduces the bug first. Reads the error trace. Proposes the smallest possible fix. Verifies after. |
+
+Switching mode rebuilds the agent with the new system prompt but keeps conversation history — the agent remembers what you discussed before the switch.
+
+---
+
+### Search across files — `search_across_files` tool
+
+The agent can now grep a pattern across an entire directory in a single tool call rather than calling `search_in_file` once per file.
+
+```text
+# agent calls:
+search_across_files(directory="./src", pattern="def parse", file_glob="*.py")
+
+# returns:
+Found 4 match(es) for 'def parse' in './src':
+  parser.py:12: def parse_config(path: str) -> dict:
+  parser.py:47: def parse_env(key: str) -> str:
+  utils/io.py:8: def parse_json(raw: str) -> dict:
+  tests/test_parser.py:5: def parse_fixture() -> dict:
+```
+
+Binary files are skipped automatically. Results are capped at 200 matches. Supply a `file_glob` like `*.py` or `*.ts` to narrow the search.
+
+---
+
 ## How the terminal UI works
 
 The CLI uses [Rich](https://github.com/Textualize/rich) for all output.
@@ -503,12 +733,21 @@ The rest of the code — tools, prompt, history, streaming, CLI — is unchanged
 
 ## What comes next
 
-- [ ] Persistent memory across sessions (summarise and reload on startup)
+- [x] Streaming final answer — text appears progressively as tokens arrive
+- [x] Input history navigation — up/down arrows cycle through previous inputs
+- [x] Multi-line input — `/paste` mode for pasting long prompts
+- [x] Diff viewer — `/diff` shows all file changes across the session
+- [x] Export conversation — `/export` writes a timestamped Markdown file
+- [x] Clipboard — `/copy` copies the last response
+- [x] Model switch — `/model <id>` swaps the LLM mid-session
+- [x] Session save/restore — `/session save|load|list`
+- [x] `patch_file` tool — targeted diff-based edits instead of full rewrites
+- [x] `search_across_files` tool — recursive grep across an entire directory
+- [x] `search_web` tool — DuckDuckGo by default, Brave Search with `BRAVE_API_KEY`
+- [x] `/mode` presets — `explain`, `refactor`, `debug` tune the system prompt without clearing history
 - [ ] Git tool (status, diff, log, commit)
-- [ ] Web search tool
 - [ ] Multi-file context (auto-read all files in scoped folder at startup)
 - [ ] Token usage display per turn
-- [ ] Save session transcript to file
 - [ ] MCP server support (expose tools over Model Context Protocol)
 
 ---

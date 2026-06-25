@@ -42,18 +42,18 @@ CTX_WINDOW  = 32768   # 32k — safe default; bump to 65536 or 131072 if needed
 MAX_PREDICT = 4096    # plenty for code explanations; raise for very long outputs
 
 
-def load_llm() -> ChatOllama:
+def load_llm(model_id: str = OLLAMA_MODEL) -> ChatOllama:
     """
     Connect to Gemma 4 running in Ollama.
     Ollama must be running before calling this.
     The model is served at localhost:11434 by default.
     """
-    print(f"Connecting to Ollama model: {OLLAMA_MODEL}")
+    print(f"Connecting to Ollama model: {model_id}")
     print(f"Make sure Ollama is running: ollama serve")
-    print(f"Make sure model is pulled:   ollama pull {OLLAMA_MODEL}\n")
+    print(f"Make sure model is pulled:   ollama pull {model_id}\n")
 
     llm = ChatOllama(
-        model=OLLAMA_MODEL,
+        model=model_id,
         base_url=OLLAMA_BASE_URL,
         temperature=TEMPERATURE,
         num_ctx=CTX_WINDOW,
@@ -66,6 +66,7 @@ def build_agent(
     llm: ChatOllama,
     context_paths: list[str] | None = None,
     memory_block: str = "",
+    mode: str = "",
 ):
     """
     Build the LangChain agent with all tools.
@@ -74,13 +75,14 @@ def build_agent(
     The agent runs a tool-calling loop internally until it reaches a final answer.
     context_paths: optional list of files/folders to scope the agent's attention to.
     memory_block:  pre-formatted memory facts injected into the system prompt.
+    mode:          optional mode preset ('explain', 'refactor', 'debug').
     """
     tools = get_all_tools()
 
     agent = create_agent(
         model=llm,
         tools=tools,
-        system_prompt=build_system_prompt(context_paths, memory_block),
+        system_prompt=build_system_prompt(context_paths, memory_block, mode),
     )
 
     return agent

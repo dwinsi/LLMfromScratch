@@ -1,21 +1,25 @@
 """
 Tool definitions for the coding agent.
 
-Seven tools covering the core operations of a coding agent:
-  read_file       - read any file's contents
-  write_file      - write or overwrite a file
-  list_directory  - list files in a folder
-  run_bash        - execute a shell command
-  search_in_file  - find text in a file
-  save_memory     - persist a fact to global or project memory
-  recall_memory   - retrieve all saved facts
+Nine tools covering the core operations of a coding agent:
+  read_file             - read any file's contents
+  write_file            - write or overwrite a file
+  list_directory        - list files in a folder
+  run_bash              - execute a shell command
+  search_in_file        - find text in a file
+  save_memory           - persist a fact to global or project memory
+  recall_memory         - retrieve all saved facts
+  patch_file            - apply a unified diff patch to a file
+  search_across_files   - search for a pattern across all files in a directory
 
 Each tool has a clear docstring. LangChain uses the docstring
 as the tool description shown to the model, so it must be precise.
 The model reads these descriptions to decide which tool to call.
 """
 
+import fnmatch
 import os
+import re
 import subprocess
 from langchain_core.tools import tool
 
@@ -267,14 +271,215 @@ def recall_memory() -> str:
     return "\n".join(lines)
 
 
+@tool
+def patch_file(file_path: str, patch: str) -> str:
+    """
+    Apply a unified diff patch to a file.
+    The patch must be in standard unified diff format (as produced by diff -u or git diff).
+    Hunks are applied in order. If context lines do not match the file, an error is returned.
+    The original file is snapshotted before patching so the turn can be rolled back.
+    Input: file_path (string), patch (unified diff string).
+    Returns a confirmation message or a detailed error.
+    """
+    try:
+        file_path = os.path.expanduser(file_path)
+        abs_path  = os.path.abspath(file_path)
+
+        if not os.path.exists(abs_path):
+            return f"Error: file not found at path '{file_path}'"
+
+        with open(abs_path, 'r', encoding='utf-8', errors='replace') as f:
+            original_content = f.read()
+
+        if abs_path not in _turn_snapshot:
+            _turn_snapshot[abs_path] = original_content
+
+        lines = original_content.splitlines(keepends=True)
+
+        hunk_header = re.compile(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@')
+        patch_lines  = patch.splitlines(keepends=True)
+
+        result_lines = list(lines)
+        offset       = 0
+
+        i = 0
+        while i < len(patch_lines):
+            line = patch_lines[i]
+            m    = hunk_header.match(line)
+            if m:
+                old_start = int(m.group(1)) - 1
+                old_count = int(m.group(2)) if m.group(2) is not None else 1
+                i += 1
+
+                hunk_old = []
+                hunk_new = []
+                while i < len(patch_lines) and not hunk_header.match(patch_lines[i]):
+                    hl = patch_lines[i]
+                    if hl.startswith('-'):
+                        hunk_old.append(hl[1:])
+                    elif hl.startswith('+'):
+                        hunk_new.append(hl[1:])
+                    elif hl.startswith(' ') or hl.startswith('\\ '):
+                        if not hl.startswith('\\ '):
+                            hunk_old.append(hl[1:])
+                            hunk_new.append(hl[1:])
+                    i += 1
+
+                apply_at = old_start + offset
+                actual   = result_lines[apply_at: apply_at + len(hunk_old)]
+                if actual != hunk_old:
+                    actual_text   = "".join(actual[:5])
+                    expected_text = "".join(hunk_old[:5])
+                    return (
+                        f"Error: context mismatch at line {old_start + 1}.\n"
+                        f"Expected:\n{expected_text}\nFound:\n{actual_text}"
+                    )
+
+                result_lines[apply_at: apply_at + len(hunk_old)] = hunk_new
+                offset += len(hunk_new) - len(hunk_old)
+            else:
+                i += 1
+
+        with open(abs_path, 'w', encoding='utf-8') as f:
+            f.writelines(result_lines)
+
+        return f"Successfully patched '{file_path}'"
+    except Exception as error:
+        return f"Error patching file: {error}"
+
+
+@tool
+def search_across_files(directory: str, pattern: str, file_glob: str = "*") -> str:
+    """
+    Recursively search for a pattern (case-insensitive substring) across all files
+    matching file_glob in directory. Binary files are skipped automatically.
+    Results are shown as filename:line_number: line_content.
+    Capped at 200 matches to avoid flooding.
+    Input: directory (string), pattern (string), file_glob (glob pattern, default "*").
+    Returns all matches with file and line info, or a message if nothing is found.
+    """
+    try:
+        directory = os.path.expanduser(directory)
+        if not os.path.isdir(directory):
+            return f"Error: directory not found at path '{directory}'"
+
+        pattern_lower = pattern.lower()
+        matches       = []
+
+        for root, _dirs, files in os.walk(directory):
+            for filename in sorted(files):
+                if not fnmatch.fnmatch(filename, file_glob):
+                    continue
+                full_path = os.path.join(root, filename)
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        for line_number, line in enumerate(f, start=1):
+                            if pattern_lower in line.lower():
+                                rel_path = os.path.relpath(full_path, directory)
+                                matches.append(f"{rel_path}:{line_number}: {line.rstrip()}")
+                                if len(matches) >= 200:
+                                    break
+                except UnicodeDecodeError:
+                    continue
+                if len(matches) >= 200:
+                    break
+            if len(matches) >= 200:
+                break
+
+        if not matches:
+            return f"No matches found for '{pattern}' in '{directory}' (glob: {file_glob})"
+
+        header = f"Found {len(matches)} match(es) for '{pattern}' in '{directory}':\n"
+        suffix = "\n(limit of 200 matches reached)" if len(matches) >= 200 else ""
+        return header + "\n".join(matches) + suffix
+
+    except Exception as error:
+        return f"Error searching files: {error}"
+
+
+@tool
+def search_web(query: str) -> str:
+    """
+    Search the web for up-to-date information about libraries, APIs, error messages,
+    or any topic where memorised knowledge may be outdated or wrong.
+    Use this before answering questions about third-party packages, framework APIs,
+    or anything the user asks you to 'look up'.
+
+    Uses DuckDuckGo by default (no API key required).
+    Set the BRAVE_API_KEY environment variable to use Brave Search instead
+    for higher-quality, structured results.
+
+    Input: a search query string.
+    Returns the top results as 'title | url | snippet' lines, capped at ~2000 characters.
+    """
+    import os
+
+    brave_key = os.environ.get("BRAVE_API_KEY", "").strip()
+
+    if brave_key:
+        return _search_brave(query, brave_key)
+    return _search_duckduckgo(query)
+
+
+def _search_duckduckgo(query: str) -> str:
+    try:
+        from duckduckgo_search import DDGS
+        results = []
+        with DDGS() as ddgs:
+            for r in ddgs.text(query, max_results=5):
+                title   = r.get("title", "").strip()
+                url     = r.get("href", "").strip()
+                snippet = r.get("body", "").strip()
+                results.append(f"{title}\n{url}\n{snippet}")
+        if not results:
+            return f"No results found for '{query}'."
+        combined = "\n\n---\n\n".join(results)
+        return combined[:2000] + ("…" if len(combined) > 2000 else "")
+    except ImportError:
+        return "Error: duckduckgo-search is not installed. Run: pip install duckduckgo-search"
+    except Exception as error:
+        return f"Error searching DuckDuckGo: {error}"
+
+
+def _search_brave(query: str, api_key: str) -> str:
+    try:
+        import urllib.request
+        import urllib.parse
+        import json as _json
+        url     = f"https://api.search.brave.com/res/v1/web/search?q={urllib.parse.quote(query)}&count=5"
+        req     = urllib.request.Request(url, headers={
+            "Accept":               "application/json",
+            "Accept-Encoding":      "gzip",
+            "X-Subscription-Token": api_key,
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read().decode())
+        web_results = data.get("web", {}).get("results", [])
+        if not web_results:
+            return f"No results found for '{query}'."
+        results = []
+        for r in web_results:
+            title       = r.get("title", "").strip()
+            url_str     = r.get("url", "").strip()
+            description = r.get("description", "").strip()
+            results.append(f"{title}\n{url_str}\n{description}")
+        combined = "\n\n---\n\n".join(results)
+        return combined[:2000] + ("…" if len(combined) > 2000 else "")
+    except Exception as error:
+        return f"Error searching Brave: {error}"
+
+
 def get_all_tools() -> list:
     """Return all tools as a list for the agent."""
     return [
         read_file,
         write_file,
+        patch_file,
         list_directory,
         run_bash,
         search_in_file,
+        search_across_files,
+        search_web,
         save_memory,
         recall_memory,
     ]

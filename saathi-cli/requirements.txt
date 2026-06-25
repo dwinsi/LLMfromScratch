@@ -1,5 +1,5 @@
 # Coding Agent Requirements
-# Install with: pip install -r requirements_agent.txt
+# Install with: pip install -r requirements.txt
 
 # LangChain core
 langchain>=0.2.0
@@ -8,6 +8,15 @@ langchain-ollama>=0.1.0
 
 # Terminal formatting
 rich>=13.0.0
+
+# Clipboard support (/copy command)
+pyperclip>=1.8.0
+
+# Input history navigation (Windows only — on Unix readline is stdlib)
+pyreadline3>=3.4.0
+
+# Web search support (search_web tool — no API key required for DuckDuckGo)
+duckduckgo-search>=6.0.0
 
 # Ollama must be installed separately:
 # https://ollama.com/download

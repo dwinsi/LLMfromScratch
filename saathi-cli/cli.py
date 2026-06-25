@@ -19,11 +19,15 @@ Commands during a session:
 """
 
 import argparse
+import difflib
 import itertools
+import json
 import os
 import threading
+from datetime import datetime
 
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -35,11 +39,21 @@ from rich.text import Text
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agent import load_llm, build_agent, compact_history, OLLAMA_MODEL
+from system_prompt import MODE_ADDENDA
 from memory_store import MemoryStore
 from tools import set_memory_store, reset_turn_snapshot, get_turn_snapshot
 
 
 console = Console()
+
+# Try to enable input history navigation (up/down arrow keys).
+try:
+    import readline  # Unix stdlib
+except ImportError:
+    try:
+        import pyreadline3 as readline  # Windows
+    except ImportError:
+        readline = None
 
 THINKING_PHRASES = [
     # English — cognitive
@@ -142,6 +156,18 @@ def print_help():
 | `/rollback` | Undo the last turn — restores files and removes it from history |
 | `/rollback <n>` | Undo the last n turns |
 | `/checkpoints` | List all recorded turns and which files each one touched |
+| `/diff` | Show unified diff of every file changed across all checkpoints |
+| `/export` | Dump conversation history to a timestamped markdown file |
+| `/copy` | Copy the last agent response to clipboard |
+| `/paste` | Enter multi-line input mode (blank line to send, Ctrl+C to cancel) |
+| `/model <model-id>` | Switch to a different Ollama model mid-session |
+| `/mode explain` | Tune agent for clear explanations — prefers reads, never modifies |
+| `/mode refactor` | Tune agent for code quality — explains every change, runs tests |
+| `/mode debug` | Tune agent for root-cause debugging — reproduces before fixing |
+| `/mode` | Show current mode (or clear it with `/mode off`) |
+| `/session save <name>` | Save current session (history, context, checkpoints) |
+| `/session load <name>` | Restore a saved session |
+| `/session list` | List all saved sessions |
 | `/memory list` | Show all saved facts (global and project) |
 | `/memory save <scope> <key> <value>` | Manually save a fact to memory |
 | `/memory delete <scope> <key>` | Delete a single fact from memory |
@@ -237,16 +263,20 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
     if memory_block:
         console.print("[dim]Memory loaded — injecting saved facts into context.[/dim]\n")
 
-    llm            = load_llm()
-    agent_executor = build_agent(llm, context_paths or None, memory_block)
+    llm            = load_llm(model_id)
+    current_mode   = ""
+    agent_executor = build_agent(llm, context_paths or None, memory_block, current_mode)
     history: list        = []   # grows each turn; compacted before every call
     checkpoints: list    = []   # each entry: {"files": snapshot, "history_len": n, "task": str}
+
+    final_answer = None  # last agent response; used by /copy
 
     console.print("[bold green]Agent ready.[/bold green] What would you like to do?\n")
 
     while True:
         try:
-            user_input = Prompt.ask("[bold cyan]You[/bold cyan]").strip()
+            mode_tag   = f" [dim]({current_mode})[/dim]" if current_mode else ""
+            user_input = Prompt.ask(f"[bold cyan]You[/bold cyan]{mode_tag}").strip()
 
             if not user_input:
                 continue
@@ -261,7 +291,7 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
 
             if user_input.lower() == 'clear':
                 history = []
-                agent_executor = build_agent(llm, context_paths or None, memory.format_for_prompt())
+                agent_executor = build_agent(llm, context_paths or None, memory.format_for_prompt(), current_mode)
                 console.print("[dim]Conversation cleared.[/dim]\n")
                 continue
 
@@ -274,7 +304,7 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
                 memory      = MemoryStore(project_dir=project_dir)
                 set_memory_store(memory)
                 history = []
-                agent_executor = build_agent(llm, context_paths or None, memory.format_for_prompt())
+                agent_executor = build_agent(llm, context_paths or None, memory.format_for_prompt(), current_mode)
                 continue
 
             if user_input.lower().startswith('/memory'):
@@ -377,6 +407,188 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
                     console.print()
                 continue
 
+            if user_input.lower() == '/diff':
+                any_diff = False
+                for cp in checkpoints:
+                    for path, original in cp["files"].items():
+                        if original is None:
+                            continue
+                        if not os.path.exists(path):
+                            continue
+                        with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+                            current = fh.read()
+                        if current == original:
+                            continue
+                        diff_lines = list(difflib.unified_diff(
+                            original.splitlines(keepends=True),
+                            current.splitlines(keepends=True),
+                            fromfile=f"a/{os.path.basename(path)}",
+                            tofile=f"b/{os.path.basename(path)}",
+                        ))
+                        if diff_lines:
+                            any_diff = True
+                            console.print(Rule(f"[dim]{path}[/dim]", style="dim"))
+                            console.print(Syntax("".join(diff_lines), "diff", theme="monokai", word_wrap=True))
+                if not any_diff:
+                    console.print("[dim]No file changes recorded across checkpoints.[/dim]\n")
+                else:
+                    console.print()
+                continue
+
+            if user_input.lower() == '/export':
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                filename  = f"saathi-export-{timestamp}.md"
+                filepath  = os.path.join(os.getcwd(), filename)
+                with open(filepath, 'w', encoding='utf-8') as fh:
+                    for msg in history:
+                        if isinstance(msg, HumanMessage):
+                            fh.write(f"## You\n\n{msg.content}\n\n")
+                        elif isinstance(msg, AIMessage):
+                            fh.write(f"## Saathi\n\n{msg.content}\n\n")
+                console.print(f"[green]Exported conversation to:[/green] [cyan]{filepath}[/cyan]\n")
+                continue
+
+            if user_input.lower() == '/copy':
+                if final_answer is None:
+                    console.print("[dim]Nothing to copy yet — run a task first.[/dim]\n")
+                else:
+                    try:
+                        import pyperclip
+                        pyperclip.copy(final_answer)
+                        console.print("[green]Last response copied to clipboard.[/green]\n")
+                    except Exception:
+                        console.print("[yellow]Clipboard not available in this environment.[/yellow]\n")
+                continue
+
+            if user_input.lower() == '/paste':
+                console.print("[dim]Enter your message (blank line to send, Ctrl+C to cancel):[/dim]")
+                collected = []
+                try:
+                    while True:
+                        line = input()
+                        if line == "":
+                            break
+                        collected.append(line)
+                except KeyboardInterrupt:
+                    console.print("\n[dim]Paste cancelled.[/dim]\n")
+                    continue
+                if not collected:
+                    console.print("[dim]Empty input — nothing sent.[/dim]\n")
+                    continue
+                user_input = "\n".join(collected)
+
+            if user_input.lower().startswith('/model'):
+                parts = user_input.split()
+                if len(parts) < 2:
+                    console.print("[yellow]Usage: /model <model-id>[/yellow]\n")
+                    continue
+                new_model_id = parts[1]
+                llm            = load_llm(new_model_id)
+                agent_executor = build_agent(llm, context_paths or None, memory.format_for_prompt(), current_mode)
+                history        = []
+                final_answer   = None
+                console.print(f"[green]Switched to model:[/green] [cyan]{new_model_id}[/cyan] — history reset.\n")
+                continue
+
+            if user_input.lower().startswith('/mode'):
+                parts    = user_input.split()
+                new_mode = parts[1].lower() if len(parts) > 1 else ""
+
+                if new_mode == "off":
+                    new_mode = ""
+
+                if new_mode and new_mode not in MODE_ADDENDA:
+                    valid = " | ".join(MODE_ADDENDA.keys())
+                    console.print(f"[red]Unknown mode:[/red] {new_mode}")
+                    console.print(f"[dim]Valid modes: {valid} | off[/dim]\n")
+                    continue
+
+                if not parts[1:]:
+                    if current_mode:
+                        console.print(f"[bold]Current mode:[/bold] [cyan]{current_mode}[/cyan]\n")
+                    else:
+                        console.print("[bold]Current mode:[/bold] [dim](none — default behaviour)[/dim]\n")
+                    continue
+
+                current_mode   = new_mode
+                agent_executor = build_agent(llm, context_paths or None, memory.format_for_prompt(), current_mode)
+                if current_mode:
+                    console.print(f"[green]Mode set:[/green] [cyan]{current_mode}[/cyan] — agent rebuilt, history kept.\n")
+                else:
+                    console.print("[green]Mode cleared.[/green] — agent rebuilt, history kept.\n")
+                continue
+
+            if user_input.lower().startswith('/session'):
+                parts = user_input.split()
+                sub   = parts[1].lower() if len(parts) > 1 else "list"
+                sessions_dir = os.path.join(".saathi", "sessions")
+
+                if sub == "list":
+                    if not os.path.isdir(sessions_dir):
+                        console.print("[dim]No saved sessions.[/dim]\n")
+                    else:
+                        entries = sorted(os.listdir(sessions_dir))
+                        if not entries:
+                            console.print("[dim]No saved sessions.[/dim]\n")
+                        else:
+                            from rich.table import Table
+                            tbl = Table(title="Saved Sessions", header_style="bold cyan")
+                            tbl.add_column("Name", style="cyan")
+                            tbl.add_column("Saved at", style="dim")
+                            for entry in entries:
+                                if entry.endswith(".json"):
+                                    fp   = os.path.join(sessions_dir, entry)
+                                    mtime = datetime.fromtimestamp(os.path.getmtime(fp)).strftime("%Y-%m-%d %H:%M:%S")
+                                    tbl.add_row(entry[:-5], mtime)
+                            console.print(tbl)
+                            console.print()
+                    continue
+
+                if sub == "save":
+                    if len(parts) < 3:
+                        console.print("[yellow]Usage: /session save <name>[/yellow]\n")
+                        continue
+                    name = parts[2]
+                    os.makedirs(sessions_dir, exist_ok=True)
+                    session_data = {
+                        "history": [
+                            {"role": "human" if isinstance(m, HumanMessage) else "ai", "content": m.content}
+                            for m in history
+                        ],
+                        "context_paths": context_paths,
+                        "checkpoints": checkpoints,
+                    }
+                    fp = os.path.join(sessions_dir, f"{name}.json")
+                    with open(fp, 'w', encoding='utf-8') as fh:
+                        json.dump(session_data, fh, indent=2)
+                    console.print(f"[green]Session saved to:[/green] [cyan]{fp}[/cyan]\n")
+                    continue
+
+                if sub == "load":
+                    if len(parts) < 3:
+                        console.print("[yellow]Usage: /session load <name>[/yellow]\n")
+                        continue
+                    name = parts[2]
+                    fp   = os.path.join(sessions_dir, f"{name}.json")
+                    if not os.path.exists(fp):
+                        console.print(f"[red]Session not found:[/red] {fp}\n")
+                        continue
+                    with open(fp, 'r', encoding='utf-8') as fh:
+                        session_data = json.load(fh)
+                    history = [
+                        HumanMessage(content=m["content"]) if m["role"] == "human" else AIMessage(content=m["content"])
+                        for m in session_data.get("history", [])
+                    ]
+                    context_paths = session_data.get("context_paths", [])
+                    checkpoints   = session_data.get("checkpoints", [])
+                    agent_executor = build_agent(llm, context_paths or None, memory.format_for_prompt(), current_mode)
+                    console.print(f"[green]Session loaded:[/green] [cyan]{name}[/cyan] — {len(history)} messages, {len(checkpoints)} checkpoints.\n")
+                    continue
+
+                console.print(f"[red]Unknown session command: {sub}[/red]")
+                console.print("[dim]/session save <name> | load <name> | list[/dim]\n")
+                continue
+
             # Build the message list for this turn: compacted history + new message
             reset_turn_snapshot()
             history_len_before = len(history)
@@ -388,7 +600,8 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
             spinner = ThinkingSpinner()
             spinner.start()
 
-            final_answer = None
+            final_answer    = None
+            live: Live | None = None
             try:
                 for chunk in agent_executor.stream(
                     {"messages": messages_to_send},
@@ -411,6 +624,9 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
                             elif node == "tools":
                                 content = str(msg.content).strip()
                                 preview = content[:300] + "…" if len(content) > 300 else content
+                                if live:
+                                    live.stop()
+                                    live = None
                                 spinner.stop()
                                 console.print(
                                     Panel(
@@ -424,9 +640,28 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
                                 spinner.start()
 
                             elif node == "model" and not tool_calls and msg.content:
-                                final_answer = msg.content
+                                if live is None:
+                                    spinner.stop()
+                                    console.print(Rule("[bold cyan]saathi[/bold cyan]", style="cyan"))
+                                    live = Live(
+                                        Markdown(""),
+                                        console=console,
+                                        refresh_per_second=15,
+                                        vertical_overflow="visible",
+                                    )
+                                    live.start()
+                                final_answer = (final_answer or "") + msg.content
+                                live.update(Markdown(final_answer))
             finally:
+                if live:
+                    live.stop()
                 spinner.stop()
+
+            if not final_answer:
+                console.print(Rule("[bold cyan]saathi[/bold cyan]", style="cyan"))
+                console.print(Markdown("No output returned."))
+
+            console.print()
 
             # Save checkpoint for this turn so it can be rolled back
             checkpoints.append({
@@ -438,10 +673,6 @@ def run_interactive_session(model_id: str, context_paths: list[str] | None = Non
             # Append the response to history so future turns have context
             if final_answer:
                 history.append(AIMessage(content=final_answer))
-
-            console.print(Rule("[bold cyan]saathi[/bold cyan]", style="cyan"))
-            console.print(Markdown(final_answer or "No output returned."))
-            console.print()
 
         except KeyboardInterrupt:
             console.print("\n[dim]Interrupted. Type [bold]quit[/bold] to exit cleanly.[/dim]")
