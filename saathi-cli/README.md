@@ -13,52 +13,13 @@ This is not a replacement for Claude Code or GitHub Copilot. It is a transparent
 ### Component map
 
 ```mermaid
-graph LR
-    USER([User])
-    GEMMA[Ollama]
-
-    subgraph MEM [memory_store]
-        GLOBAL[global memory]
-        PROJECT[project memory]
-    end
-
-    subgraph PROMPT [system_prompt]
-        SP[build_system_prompt]
-    end
-
-    subgraph AGENT [agent]
-        BUILD[build_agent]
-        STREAM[stream]
-    end
-
-    subgraph TOOLS [tools]
-        FTOOL[file tools]
-        MTOOL[memory tools]
-    end
-
-    subgraph CLI [cli]
-        INPUT[input]
-        HISTORY[history and compact]
-        SPINNER[spinner]
-        RENDERER[renderer]
-    end
-
-    MEM -->|memory block| SP
-    SP --> BUILD
-    FTOOL --> BUILD
-    MTOOL --> BUILD
-    BUILD --> STREAM
-    STREAM --> GEMMA
-
-    USER -->|task| INPUT
-    INPUT --> HISTORY
-    HISTORY -->|trimmed messages| STREAM
-    STREAM -->|tool call| SPINNER
-    STREAM -->|observation| RENDERER
-    STREAM -->|final answer| RENDERER
-    RENDERER -->|output| USER
-
-    MTOOL -->|read write| MEM
+graph TD
+    Memory --> Prompt
+    Prompt --> Agent
+    Tools --> Agent
+    Agent --> Ollama
+    Agent --> CLI
+    CLI --> User
 ```
 
 ### Request flow — one turn
@@ -67,37 +28,20 @@ graph LR
 sequenceDiagram
     participant User
     participant CLI
-    participant Mem as memory_store
+    participant Mem
     participant Agent
-    participant LG as LangGraph
     participant Ollama
 
-    CLI->>Mem: load global and project memory
-    Mem-->>CLI: memory_block
-    CLI->>Agent: build_agent with memory in system prompt
-
-    User->>CLI: types a task
-    CLI->>CLI: append HumanMessage to history
-    CLI->>CLI: compact_history trims to 75pct of window
-    CLI->>Agent: trimmed message list
-    Agent->>LG: stream messages
-    CLI->>CLI: ThinkingSpinner starts
-
-    loop ReAct loop
-        LG->>Ollama: api chat request
-        Ollama-->>LG: token stream
-        LG-->>CLI: tool call chunk
-        CLI->>CLI: spinner shows tool name
-        LG->>LG: executes tool
-        LG-->>CLI: observation chunk
-        CLI->>CLI: prints observation panel
-    end
-
-    LG-->>CLI: final answer chunk
-    CLI->>CLI: spinner stops
-    CLI->>CLI: append AIMessage to history
-    CLI->>User: renders Markdown response
-    LG->>Mem: save_memory if agent learns something useful
+    CLI->>Mem: load memory
+    Mem-->>CLI: memory block
+    CLI->>Agent: build with memory
+    User->>CLI: task
+    CLI->>Agent: message history
+    Agent->>Ollama: chat request
+    Ollama-->>Agent: response
+    Agent-->>CLI: final answer
+    CLI->>User: render response
+    CLI->>Mem: save if useful
 ```
 
 ---
