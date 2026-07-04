@@ -1,0 +1,13 @@
+# Optional visualization libraries. Install what you want to use:
+#
+#   pip install -r requirements-viz.txt
+#
+# torchview also needs the graphviz SYSTEM binary:
+#   macOS:         brew install graphviz
+#   Ubuntu/Debian: sudo apt-get install graphviz
+
+torchinfo>=1.8      # text summary table (params + shapes per layer)
+torchview>=0.2      # architecture diagram (module tree), needs graphviz binary
+netron>=7.0         # interactive ONNX model explorer
+tensorboard>=2.13   # live training curves, weight histograms, compute graph
+onnx>=1.15          # required for Netron export
