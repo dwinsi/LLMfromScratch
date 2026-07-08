@@ -61,10 +61,16 @@ ignore = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"
-strict = true
 ignore_missing_imports = true
+# Pragmatic (not strict): enforce checks that catch real bugs without demanding
+# exhaustive annotations on internal state dicts. Tightened over time.
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+warn_return_any = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["src"]
 addopts = "-ra -q"

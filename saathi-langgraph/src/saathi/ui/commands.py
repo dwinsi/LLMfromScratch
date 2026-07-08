@@ -64,7 +64,8 @@ def handle_memory(args: list[str], memory_store: MemoryStore) -> None:
         console.print(f"[dim]Cleared {args[1]} memory.[/dim]")
     else:
         console.print(
-            "[red]Usage:[/red] /memory list | save <scope> <key> <value> | delete <scope> <key> | clear <scope>"
+            "[red]Usage:[/red] /memory list | save <scope> <key> <value> | "
+            "delete <scope> <key> | clear <scope>"
         )
 
 

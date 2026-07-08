@@ -1,5 +1,6 @@
 """Rich-based terminal display helpers."""
 
+import contextlib
 import sys
 
 from rich import box
@@ -12,10 +13,8 @@ from rich.table import Table
 # Windows consoles / pipes that default to a legacy codepage like cp1252.
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
-        try:
+        with contextlib.suppress(ValueError, OSError):
             _stream.reconfigure(encoding="utf-8", errors="replace")
-        except (ValueError, OSError):
-            pass
 
 console = Console()
 

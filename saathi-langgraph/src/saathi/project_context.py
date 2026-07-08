@@ -1,5 +1,6 @@
 """Discovery and loading of SAATHI.md project instruction files."""
 
+import contextlib
 from pathlib import Path
 
 _FILENAME = "SAATHI.md"
@@ -20,10 +21,9 @@ def find_project_instructions(start: Path | None = None) -> str:
     while True:
         candidate = current / _FILENAME
         if candidate.is_file():
-            try:
-                found.append((candidate, candidate.read_text(encoding="utf-8", errors="replace")))
-            except OSError:
-                pass
+            with contextlib.suppress(OSError):
+                text = candidate.read_text(encoding="utf-8", errors="replace")
+                found.append((candidate, text))
         if current == home or current.parent == current:
             break
         current = current.parent

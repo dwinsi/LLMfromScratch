@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import json
+import sys
 import threading
 import time
+import uuid
 
 import typer
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from rich.rule import Rule
 
 from saathi.agent import build_graph, close_graph
@@ -213,17 +216,123 @@ def _extract_usage(output) -> tuple[int, int] | None:
 
 @app.command()
 def main(
+    print_task: str | None = typer.Option(
+        None,
+        "--print",
+        "-p",
+        help="Run a single task non-interactively, print the result, and exit",
+    ),
+    output_format: str = typer.Option(
+        "text", "--output-format", help="Output for --print: 'text' or 'json'"
+    ),
     model: str | None = typer.Option(None, "--model", "-m", help="Ollama model ID"),
     context: list[str] | None = typer.Option(None, "--context", "-c", help="Scope to paths"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
-    """Start an interactive Saathi session."""
+    """Start an interactive Saathi session, or run one task with --print."""
 
     if debug:
-        settings.debug = True  # type: ignore[misc]
+        settings.debug = True
 
     model_id = model or settings.ollama_model
+
+    if print_task is not None:
+        code = asyncio.run(_print_mode(model_id, list(context or []), print_task, output_format))
+        raise typer.Exit(code)
+
     asyncio.run(_interactive_session(model_id, list(context or [])))
+
+
+async def _print_mode(
+    model_id: str,
+    context_paths: list[str],
+    task: str,
+    output_format: str,
+) -> int:
+    """Run a single task with no interactive UI; emit text or JSON to stdout.
+
+    Returns a process exit code (0 ok, 1 runtime error, 2 usage error). All
+    diagnostics go to stderr so stdout stays clean for piping.
+    """
+    if output_format not in ("text", "json"):
+        print(
+            f"error: --output-format must be 'text' or 'json', got {output_format!r}",
+            file=sys.stderr,
+        )
+        return 2
+
+    memory_store = MemoryStore()
+    hook_runner = HookRunner()
+    graph = await build_graph(ALL_TOOLS, memory_store, model_id, hook_runner=hook_runner)
+    session_id = uuid.uuid4().hex
+    config = {"configurable": {"thread_id": session_id}}
+    input_state = {
+        "messages": [HumanMessage(content=task)],
+        "context_paths": context_paths,
+        "mode": "default",
+        "session_id": session_id,
+    }
+
+    try:
+        result = await graph.ainvoke(input_state, config)
+    except Exception as exc:  # noqa: BLE001 — surface any failure as a clean error
+        if settings.debug:
+            import traceback
+
+            traceback.print_exc()
+        _emit_error(str(exc), output_format)
+        return 1
+    finally:
+        await close_graph(graph)
+
+    messages: list[BaseMessage] = result.get("messages", [])
+    response = _final_text(messages)
+
+    if output_format == "json":
+        payload = {
+            "model": model_id,
+            "task": task,
+            "response": response,
+            "tool_calls": _collect_tool_calls(messages),
+            "usage": _collect_usage(messages),
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(response)
+    return 0
+
+
+def _emit_error(message: str, output_format: str) -> None:
+    if output_format == "json":
+        print(json.dumps({"error": message}, ensure_ascii=False), file=sys.stderr)
+    else:
+        print(f"error: {message}", file=sys.stderr)
+
+
+def _final_text(messages: list[BaseMessage]) -> str:
+    """The last assistant message with textual content."""
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage) and isinstance(msg.content, str) and msg.content.strip():
+            return msg.content
+    return ""
+
+
+def _collect_tool_calls(messages: list[BaseMessage]) -> list[dict]:
+    calls: list[dict] = []
+    for msg in messages:
+        for tc in getattr(msg, "tool_calls", None) or []:
+            calls.append({"name": tc["name"], "args": tc.get("args", {})})
+    return calls
+
+
+def _collect_usage(messages: list[BaseMessage]) -> dict[str, int]:
+    in_tokens = out_tokens = 0
+    for msg in messages:
+        usage = _extract_usage(msg)
+        if usage:
+            in_tokens += usage[0]
+            out_tokens += usage[1]
+    return {"input_tokens": in_tokens, "output_tokens": out_tokens}
 
 
 async def _interactive_session(model_id: str, context_paths: list[str]) -> None:
@@ -253,14 +362,17 @@ async def _interactive_session(model_id: str, context_paths: list[str]) -> None:
         """Run one agent turn for a task and record its result + post_turn hooks."""
         nonlocal messages
         clear_turn_snapshots()
-        snapshots_before = get_turn_snapshots()
 
         final_answer, messages = await _run_turn(graph, config, task, state, messages)
 
+        # Record the pre-edit content of files this turn touched, keeping the
+        # earliest snapshot per file so /diff shows changes since the session
+        # started (setdefault never overwrites an earlier original).
+        for path, original in get_turn_snapshots().items():
+            session_start_snapshots.setdefault(path, original)
+
         if final_answer:
             state.last_response = final_answer
-            # capture any files touched this turn for /diff
-            session_start_snapshots.update(snapshots_before)
 
         # fire post_turn hooks (e.g. run tests, lint) after every completed turn
         if not hook_runner.config.is_empty:
@@ -357,7 +469,7 @@ async def _interactive_session(model_id: str, context_paths: list[str]) -> None:
 
             if cmd == "compact":
                 console.print(
-                    "[dim]Compact: use LangGraph checkpointing — /rollback or /checkpoints instead.[/dim]"
+                    "[dim]Compact: use /rollback or /checkpoints (LangGraph checkpointing).[/dim]"
                 )
                 continue
 

@@ -72,7 +72,7 @@ def _serialize_message(msg: BaseMessage) -> dict:
 def _deserialize_message(data: dict) -> BaseMessage:
     t = data.get("type", "HumanMessage")
     content = data.get("content", "")
-    mapping = {
+    mapping: dict[str, type[BaseMessage]] = {
         "HumanMessage": HumanMessage,
         "AIMessage": AIMessage,
         "SystemMessage": SystemMessage,

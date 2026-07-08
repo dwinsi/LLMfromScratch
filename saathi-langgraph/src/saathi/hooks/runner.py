@@ -107,8 +107,9 @@ class HookRunner:
 
 def _extract_path(tool_args: dict) -> str | None:
     for key in _PATH_ARG_KEYS:
-        if key in tool_args and isinstance(tool_args[key], str):
-            return tool_args[key]
+        value = tool_args.get(key)
+        if isinstance(value, str):
+            return value
     return None
 
 

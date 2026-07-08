@@ -1,5 +1,6 @@
 """LangGraph state graph construction."""
 
+import contextlib
 from pathlib import Path
 
 import aiosqlite
@@ -68,7 +69,6 @@ async def close_graph(graph) -> None:
     checkpointer = getattr(graph, "checkpointer", None)
     conn = getattr(checkpointer, "conn", None)
     if conn is not None:
-        try:
+        # best-effort cleanup on shutdown
+        with contextlib.suppress(Exception):
             await conn.close()
-        except Exception:  # noqa: BLE001 — best-effort cleanup on shutdown
-            pass

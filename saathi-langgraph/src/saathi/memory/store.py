@@ -17,7 +17,8 @@ class MemoryStore:
     def _load(self, path: Path) -> dict[str, str]:
         if path.exists():
             try:
-                return json.loads(path.read_text(encoding="utf-8"))
+                data: dict[str, str] = json.loads(path.read_text(encoding="utf-8"))
+                return data
             except (json.JSONDecodeError, OSError):
                 return {}
         return {}

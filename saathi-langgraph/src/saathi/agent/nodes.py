@@ -1,8 +1,8 @@
 """LangGraph node implementations."""
 
+from langchain_core.language_models import LanguageModelLike
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_ollama import ChatOllama
 
 from saathi.agent.prompts import build_system_prompt
 from saathi.agent.state import AgentState
@@ -10,8 +10,12 @@ from saathi.memory.store import MemoryStore
 from saathi.project_context import find_project_instructions
 
 
-def make_agent_node(llm: ChatOllama, memory_store: MemoryStore):
-    """Return a LangGraph node that calls the LLM with bound tools."""
+def make_agent_node(llm: LanguageModelLike, memory_store: MemoryStore):
+    """Return a LangGraph node that calls the LLM with bound tools.
+
+    Accepts a ``LanguageModelLike`` because ``ChatOllama.bind_tools(...)`` returns
+    a ``Runnable`` binding rather than a bare ``ChatOllama``.
+    """
 
     # Loaded once per graph build; a new session picks up edited SAATHI.md.
     project_instructions = find_project_instructions()

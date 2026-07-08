@@ -419,7 +419,7 @@ codepages; `run_bash` and hooks branch on `sys.platform`.
 
 ### Automated, isolated testing
 
-56 offline tests with fixtures, `tmp_path` isolation, and a regression test for the
+68 offline tests with fixtures, `tmp_path` isolation, and a regression test for the
 graph-loop wiring. → [`tests/`](tests/README.md)
 
 ---

@@ -34,13 +34,13 @@ def read_file(path: str) -> str:
 
 @tool
 def write_file(path: str, content: str) -> str:
-    """Create or overwrite a file with the given content. Parent directories are created automatically."""
+    """Create or overwrite a file; parent directories are created automatically."""
     try:
         p = Path(path)
-        if p.exists():
-            _turn_snapshots[str(p.resolve())] = p.read_text(encoding="utf-8", errors="replace")
-        else:
-            _turn_snapshots[str(p.resolve())] = ""
+        original = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
+        # setdefault: keep the pre-edit content from the FIRST touch this turn,
+        # so repeated edits to one file don't clobber its true original for /diff.
+        _turn_snapshots.setdefault(str(p.resolve()), original)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         return f"Written {len(content)} chars to {path}"
@@ -50,7 +50,7 @@ def write_file(path: str, content: str) -> str:
 
 @tool
 def patch_file(path: str, diff: str) -> str:
-    """Apply a unified diff patch to an existing file. Prefer this over write_file for targeted edits."""
+    """Apply a unified diff patch to an existing file (prefer over write_file for edits)."""
     import tempfile
 
     p = Path(path)
@@ -58,7 +58,7 @@ def patch_file(path: str, diff: str) -> str:
         return f"Error: file not found: {path}"
 
     original = p.read_text(encoding="utf-8", errors="replace")
-    _turn_snapshots[str(p.resolve())] = original
+    _turn_snapshots.setdefault(str(p.resolve()), original)
 
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".patch", delete=False, encoding="utf-8"

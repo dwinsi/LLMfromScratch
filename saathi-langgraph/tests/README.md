@@ -1,6 +1,6 @@
 # Saathi Test Suite
 
-A `pytest` suite of **56 tests** covering the whole application. It runs
+A `pytest` suite of **68 tests** covering the whole application. It runs
 **fully offline** — no Ollama server, no network, no API keys. Every test writes
 only to a temporary directory, so running it never touches your real `~/.saathi`
 memory or your git repository.
@@ -37,7 +37,7 @@ pytest
 Expected output ends with a line like:
 
 ```text
-56 passed in 22.71s
+68 passed in 22.57s
 ```
 
 ### Run one file
@@ -134,6 +134,17 @@ The core file/search/shell tools:
 - `search_across_files` greps a directory
 - `run_bash` echoes output **and** refuses a dangerous command from the denylist
 
+### `test_snapshots.py` (7 tests)
+
+The file-change snapshots behind `/diff` (regression coverage for the bug that
+once made `/diff` always say "no changes"):
+
+- a new file snapshots as empty, an existing file snapshots its original content
+- repeated writes in one turn keep the **first** original, not the intermediate
+- `clear_turn_snapshots` empties the store
+- `/diff` renders modifications, reports deletions, and says "no changes" when
+  content is unchanged
+
 ### `test_git.py` (3 tests)
 
 Git tools **without ever creating a commit or touching a real repo**:
@@ -204,6 +215,13 @@ the normal case in CI.
 The token-count extraction behind the per-turn `↳ … in · … out` footer: reads
 `usage_metadata`, falls back to Ollama's `prompt_eval_count`/`eval_count`, and
 returns `None` when there's nothing to report.
+
+### `test_print_mode.py` (5 tests)
+
+The non-interactive `--print` mode: picking the final assistant message,
+collecting tool calls and summing token usage for the JSON payload, and
+rejecting an invalid `--output-format` with exit code 2 (before any graph is
+built, so it stays offline).
 
 ---
 

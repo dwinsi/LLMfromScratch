@@ -55,6 +55,22 @@ saathi --model gemma4:27b
 saathi --context ./src --context ./tests
 ```
 
+## Scripting mode (`--print`)
+
+Run a single task non-interactively and exit — for shell pipelines and CI:
+
+```bash
+# plain text: just the final answer on stdout
+saathi --print "what does src/saathi/cli.py do?"
+
+# machine-readable JSON (response + tool calls + token usage)
+saathi -p "summarize the tools" --output-format json | jq .response
+```
+
+Diagnostics go to **stderr**, results to **stdout**, so piping stays clean.
+Exit codes: `0` success, `1` runtime error (e.g. Ollama down), `2` bad usage.
+The JSON payload has `model`, `task`, `response`, `tool_calls`, and `usage`.
+
 ## Commands
 
 | Input | Action |
@@ -203,7 +219,7 @@ target path, when the tool has one).
 
 ## Testing
 
-An offline `pytest` suite lives in [`tests/`](tests/README.md) — 56 tests, no
+An offline `pytest` suite lives in [`tests/`](tests/README.md) — 68 tests, no
 Ollama or network needed.
 
 ```bash
@@ -215,6 +231,18 @@ Covers tool registration, parallel execution + semaphore cap, hook blocking,
 `SAATHI.md` loading, memory, graph compilation, and token-usage extraction.
 `asyncio_mode = "auto"` means async tests need no decorator; everything writes
 to `tmp_path`, so no test touches your real `~/.saathi` or repo.
+
+### Quality gates
+
+The same checks run in CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
+on every push and PR, across Python 3.12 and 3.13:
+
+```bash
+ruff check .            # lint
+ruff format --check .   # formatting
+mypy src                # type check
+pytest                  # tests
+```
 
 ## LangGraph checkpointing
 
