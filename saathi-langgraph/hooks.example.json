@@ -1,0 +1,24 @@
+{
+  "_comment": "Copy this to .saathi/hooks.json to enable hooks. All keys are optional.",
+
+  "pre_tool": [
+    "echo \"[hook] about to run $SAATHI_TOOL_NAME\" >&2"
+  ],
+
+  "post_tool": [
+    "sh -c 'case \"$SAATHI_TOOL_ARG_PATH\" in *.py) ruff format \"$SAATHI_TOOL_ARG_PATH\" ;; esac'"
+  ],
+
+  "post_turn": [
+    "ruff check . || true"
+  ],
+
+  "block_paths": [
+    "*.env",
+    ".env.*",
+    "**/secrets/*",
+    "*.pem",
+    "*.key",
+    "id_rsa*"
+  ]
+}

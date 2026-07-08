@@ -1,0 +1,32 @@
+"""LangGraph node implementations."""
+
+from langchain_core.messages import SystemMessage
+from langchain_core.runnables import RunnableConfig
+from langchain_ollama import ChatOllama
+
+from saathi.agent.prompts import build_system_prompt
+from saathi.agent.state import AgentState
+from saathi.memory.store import MemoryStore
+from saathi.project_context import find_project_instructions
+
+
+def make_agent_node(llm: ChatOllama, memory_store: MemoryStore):
+    """Return a LangGraph node that calls the LLM with bound tools."""
+
+    # Loaded once per graph build; a new session picks up edited SAATHI.md.
+    project_instructions = find_project_instructions()
+
+    async def agent_node(state: AgentState, config: RunnableConfig) -> dict:
+        memory_block = memory_store.format_for_prompt()
+        system_prompt = build_system_prompt(
+            context_paths=state.get("context_paths", []),
+            memory_block=memory_block,
+            mode=state.get("mode", "default"),
+            project_instructions=project_instructions,
+        )
+
+        messages = [SystemMessage(content=system_prompt)] + state["messages"]
+        response = await llm.ainvoke(messages, config)
+        return {"messages": [response]}
+
+    return agent_node
