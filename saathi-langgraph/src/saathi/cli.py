@@ -14,11 +14,16 @@ import typer
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from rich.rule import Rule
 
-from saathi.agent import build_graph, close_graph
+from saathi.agent import build_graph, close_graph, make_llm
+from saathi.compaction import compact_messages, estimate_tokens, needs_compaction
 from saathi.config import settings
+from saathi.custom_commands import load_custom_commands, render_command
 from saathi.diagnostics import run_doctor
 from saathi.hooks.runner import HookRunner
+from saathi.logging_config import configure_logging, get_logger
+from saathi.mcp_client import load_mcp_config, load_mcp_tools
 from saathi.memory.store import MemoryStore
+from saathi.review import get_working_diff, render_review, run_review
 from saathi.project_context import instructions_source
 from saathi.session.manager import SessionManager, SessionState
 from saathi.tools import ALL_TOOLS
@@ -47,6 +52,8 @@ app = typer.Typer(
     name="saathi", help="Local coding agent powered by LangGraph + Ollama", add_completion=False
 )
 
+log = get_logger()
+
 _INIT_PROMPT = (
     "Explore this repository and create a SAATHI.md file at the project root. "
     "Use list_directory and read_file to understand the project. The file should "
@@ -60,6 +67,16 @@ _COMMIT_PROMPT = (
     "git_diff (and git_diff_staged) to see what changed. Then write a clear, "
     "conventional commit message summarizing the changes and call "
     "git_commit(message=..., add_all=True). Report the result."
+)
+
+_REVISE_PROMPT = (
+    "Review our conversation in this session and update the project's SAATHI.md "
+    "to capture durable learnings — conventions, architecture decisions, gotchas, "
+    "or useful commands that would help in a future session. First read the "
+    "existing SAATHI.md at the project root with read_file (if it does not exist, "
+    "start fresh). Merge new insights in with write_file: preserve existing "
+    "content, add or refine sections, and keep it concise. Do NOT invent facts "
+    "that were not established this session. Summarize what you changed."
 )
 
 _SPINNER_PHRASES = itertools.cycle(
@@ -233,6 +250,7 @@ def main(
 
     if debug:
         settings.debug = True
+    configure_logging(settings.debug)
 
     model_id = model or settings.ollama_model
 
@@ -263,7 +281,10 @@ async def _print_mode(
 
     memory_store = MemoryStore()
     hook_runner = HookRunner()
-    graph = await build_graph(ALL_TOOLS, memory_store, model_id, hook_runner=hook_runner)
+    mcp_tools = await load_mcp_tools(load_mcp_config())
+    graph = await build_graph(
+        [*ALL_TOOLS, *mcp_tools], memory_store, model_id, hook_runner=hook_runner
+    )
     session_id = uuid.uuid4().hex
     config = {"configurable": {"thread_id": session_id}}
     input_state = {
@@ -346,21 +367,65 @@ async def _interactive_session(model_id: str, context_paths: list[str]) -> None:
         context_paths=context_paths,
     )
 
-    graph = await build_graph(ALL_TOOLS, memory_store, model_id, hook_runner=hook_runner)
+    mcp_connections = load_mcp_config()
+    mcp_tools = await load_mcp_tools(mcp_connections)
+    tools = [*ALL_TOOLS, *mcp_tools]
+
+    graph = await build_graph(tools, memory_store, model_id, hook_runner=hook_runner)
     config = {"configurable": {"thread_id": state.session_id}}
+    summarizer = make_llm(model_id)  # unbound LLM, used only for /compact
+
+    custom_commands = load_custom_commands()
 
     src = instructions_source()
     if src:
         console.print(f"[dim]✓ loaded {src}[/dim]")
     if not hook_runner.config.is_empty:
         console.print("[dim]✓ hooks active (.saathi/hooks.json)[/dim]")
+    if mcp_tools:
+        console.print(
+            f"[dim]✓ {len(mcp_tools)} MCP tool(s) from {len(mcp_connections)} server(s)[/dim]"
+        )
+    if custom_commands:
+        names = ", ".join(f"/{c}" for c in custom_commands)
+        console.print(f"[dim]✓ {len(custom_commands)} custom command(s): {names}[/dim]")
 
     messages: list = []
     session_start_snapshots: dict[str, str] = {}
 
+    async def do_compact(*, auto: bool) -> None:
+        """Summarize old turns and continue on a fresh checkpoint thread.
+
+        A new thread_id is used so the compacted list becomes the new baseline —
+        the add_messages reducer only appends, so we can't shrink the old thread's
+        state in place. Trade-off: /rollback can't cross a compaction boundary.
+        """
+        nonlocal messages, config
+        before = estimate_tokens(messages)
+        try:
+            compacted = await compact_messages(summarizer, messages)
+        except Exception as exc:  # noqa: BLE001 — compaction is best-effort
+            log.warning("compaction_failed", error=str(exc))
+            if not auto:
+                console.print(f"[yellow]Compaction failed:[/yellow] {exc}")
+            return
+        if compacted is messages:  # not enough history to compact
+            if not auto:
+                console.print("[dim]Not enough history to compact yet.[/dim]")
+            return
+        messages = compacted
+        state.session_id = uuid.uuid4().hex
+        config = {"configurable": {"thread_id": state.session_id}}
+        after = estimate_tokens(messages)
+        label = "auto-compacted" if auto else "compacted"
+        log.info("history_compacted", before=before, after=after, auto=auto)
+        console.print(f"[dim]↯ {label} history: ~{before:,} → ~{after:,} tokens[/dim]")
+
     async def execute_task(task: str) -> None:
         """Run one agent turn for a task and record its result + post_turn hooks."""
         nonlocal messages
+        if needs_compaction(messages, settings.history_token_budget):
+            await do_compact(auto=True)
         clear_turn_snapshots()
 
         final_answer, messages = await _run_turn(graph, config, task, state, messages)
@@ -460,17 +525,14 @@ async def _interactive_session(model_id: str, context_paths: list[str]) -> None:
                 model_id = args[0]
                 messages = []
                 await close_graph(graph)
-                graph = await build_graph(
-                    ALL_TOOLS, memory_store, model_id, hook_runner=hook_runner
-                )
+                graph = await build_graph(tools, memory_store, model_id, hook_runner=hook_runner)
+                summarizer = make_llm(model_id)
                 config = {"configurable": {"thread_id": state.session_id}}
                 console.print(f"[green]Model:[/green] {model_id}  [dim](history cleared)[/dim]")
                 continue
 
             if cmd == "compact":
-                console.print(
-                    "[dim]Compact: use /rollback or /checkpoints (LangGraph checkpointing).[/dim]"
-                )
+                await do_compact(auto=False)
                 continue
 
             if cmd == "doctor":
@@ -485,6 +547,41 @@ async def _interactive_session(model_id: str, context_paths: list[str]) -> None:
             if cmd == "commit":
                 clear_turn_snapshots()
                 _, messages = await _run_turn(graph, config, _COMMIT_PROMPT, state, messages)
+                continue
+
+            if cmd in ("revise-saathi-md", "revise"):
+                await execute_task(_REVISE_PROMPT)
+                continue
+
+            if cmd in ("code-review", "review"):
+                diff = get_working_diff()
+                if not diff:
+                    console.print("[dim]No uncommitted changes to review.[/dim]")
+                    continue
+                review_llm = make_llm(model_id, json_format=True)
+                spinner = ThinkingSpinner()
+                spinner.update("reviewing changes…")
+                spinner.start()
+                try:
+                    findings = await run_review(
+                        review_llm, diff, min_confidence=settings.review_min_confidence
+                    )
+                finally:
+                    spinner.stop()
+                render_review(findings, settings.review_min_confidence)
+                continue
+
+            if cmd == "commands":
+                if custom_commands:
+                    for name in custom_commands:
+                        console.print(f"  [cyan]/{name}[/cyan]")
+                else:
+                    console.print("[dim]No custom commands. Add .saathi/commands/*.md[/dim]")
+                continue
+
+            # user-defined commands from .saathi/commands/*.md (built-ins win)
+            if cmd in custom_commands:
+                await execute_task(render_command(custom_commands[cmd], args))
                 continue
 
             console.print(

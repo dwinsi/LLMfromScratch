@@ -18,14 +18,20 @@ from saathi.hooks.runner import HookRunner
 from saathi.memory.store import MemoryStore
 
 
-def _make_llm(model_id: str) -> ChatOllama:
-    return ChatOllama(
+def make_llm(model_id: str, *, json_format: bool = False) -> ChatOllama:
+    """Build an (unbound) ChatOllama from settings — used for the agent, history
+    summarization, and code review. Set ``json_format`` to force JSON output
+    (Ollama's format mode), used by the reviewers."""
+    kwargs: dict = dict(
         model=model_id,
         base_url=settings.ollama_base_url,
         temperature=settings.temperature,
         num_ctx=settings.context_window,
         num_predict=settings.max_tokens,
     )
+    if json_format:
+        kwargs["format"] = "json"
+    return ChatOllama(**kwargs)
 
 
 async def build_graph(
@@ -38,7 +44,7 @@ async def build_graph(
     """Build and compile the agent graph with an async SQLite checkpointer."""
 
     model_id = model_id or settings.ollama_model
-    llm = _make_llm(model_id).bind_tools(tools)
+    llm = make_llm(model_id).bind_tools(tools)
 
     agent_node = make_agent_node(llm, memory_store)
     tool_node = make_hooked_tool_node(tools, hook_runner or HookRunner())

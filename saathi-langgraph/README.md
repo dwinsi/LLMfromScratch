@@ -79,12 +79,14 @@ The JSON payload has `model`, `task`, `response`, `tool_calls`, and `usage`.
 | `clear` | Reset conversation history |
 | `quit` / `exit` | End session |
 | `/init` | Scan the repo and generate a `SAATHI.md` |
+| `/revise-saathi-md` | Update `SAATHI.md` with this session's learnings |
 | `/commit` | Review changes and create a git commit |
 | `/doctor` | Health check: Ollama, model, memory dirs, git/patch |
 | `/context <path> ...` | Scope agent to files/folders |
 | `/context` | Clear scope |
 | `/rollback [n]` | Undo last n turns via LangGraph checkpoints |
 | `/checkpoints` | List all checkpoint snapshots |
+| `/compact` | Summarize old turns to free context window |
 | `/diff` | Show file changes this session |
 | `/export` | Save conversation to Markdown |
 | `/copy` | Copy last response to clipboard |
@@ -157,6 +159,8 @@ startup Saathi walks from the cwd up to your home directory, loads every
 `SAATHI.md` it finds (nearest wins), and injects them into the system prompt.
 
 - `/init` — let the agent scan the repo and write a `SAATHI.md` for you
+- `/revise-saathi-md` — after a working session, fold what was learned back into
+  `SAATHI.md` (conventions, gotchas, decisions) so the next session starts smarter
 - Edit it by hand afterwards; changes apply on the next session
 
 ## Token usage
@@ -174,6 +178,71 @@ Counts come from Ollama's `usage_metadata` / `prompt_eval_count` fields.
 `/doctor` verifies Ollama is reachable, the configured model is pulled, the
 global and project memory directories are writable, and that `git`/`patch` are
 on PATH — a one-stop troubleshooter.
+
+Run with `--debug` for structured (`structlog`) logs of tool blocks, errors, and
+hook runs. Logs are quiet by default and always go to stderr, so `--print`
+output stays clean.
+
+Transient Ollama **connection** failures (server still starting up) are retried
+with exponential backoff — tune via `SAATHI_OLLAMA_MAX_RETRIES` and
+`SAATHI_OLLAMA_RETRY_BASE_DELAY`. Slow responses are not retried.
+
+## MCP servers
+
+Connect external [Model Context Protocol](https://modelcontextprotocol.io)
+servers and their tools join the agent's toolset automatically. Declare them in
+`.saathi/mcp.json` (Claude-Desktop style):
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    },
+    "weather": { "url": "http://localhost:8000/mcp/" }
+  }
+}
+```
+
+- `command`/`args` → stdio transport; `url` → HTTP (`transport` inferred, or set
+  it explicitly to `stdio` / `streamable_http` / `sse`).
+- On startup you'll see `✓ N MCP tool(s) from M server(s)`.
+- Loading is **best-effort**: a broken or unreachable server logs a warning and
+  is skipped — it never blocks startup.
+- A minimal example server ships in [`examples/mcp_echo_server.py`](examples/mcp_echo_server.py);
+  see [`examples/mcp.example.json`](examples/mcp.example.json).
+
+## Custom commands
+
+Drop markdown files in `.saathi/commands/` to define your own slash commands
+(mirrors Claude Code's project commands). A file `review-diff.md` registers
+`/review-diff`; its content is the prompt that runs. See [`examples/commands/`](examples/commands).
+
+```bash
+mkdir -p .saathi/commands
+cp examples/commands/*.md .saathi/commands/
+saathi        # startup shows: ✓ 2 custom command(s): /explain, /review-diff
+```
+
+- If the template contains `$ARGS`, text typed after the command is substituted
+  there (e.g. `/explain src/saathi/cli.py`); otherwise it's appended.
+- `/commands` lists the loaded custom commands.
+- Built-in commands always take precedence over same-named custom ones.
+
+## History compaction
+
+Long sessions eventually fill the context window. Saathi summarizes the older
+turns into a single summary message and keeps recent turns verbatim:
+
+- **`/compact`** — do it now
+- **Automatic** — before a turn, if the history estimate exceeds 75% of the
+  context window (`SAATHI_CONTEXT_WINDOW`), Saathi compacts first
+
+The cut is made at a **user-turn boundary**, so the retained tail is always a
+valid sequence (never a dangling tool result). Compaction continues on a fresh
+checkpoint thread, so the summarized history becomes the new baseline — the
+trade-off is that `/rollback` cannot cross a compaction boundary.
 
 ## Parallel tool execution
 
@@ -219,7 +288,7 @@ target path, when the tool has one).
 
 ## Testing
 
-An offline `pytest` suite lives in [`tests/`](tests/README.md) — 68 tests, no
+An offline `pytest` suite lives in [`tests/`](tests/README.md) — 104 tests, no
 Ollama or network needed.
 
 ```bash

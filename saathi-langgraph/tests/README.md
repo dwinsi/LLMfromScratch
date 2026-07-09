@@ -1,9 +1,9 @@
 # Saathi Test Suite
 
-A `pytest` suite of **68 tests** covering the whole application. It runs
-**fully offline** — no Ollama server, no network, no API keys. Every test writes
-only to a temporary directory, so running it never touches your real `~/.saathi`
-memory or your git repository.
+A `pytest` suite of **104 tests** covering the whole application. It runs
+**offline** — no Ollama server, no network, no API keys (one MCP test spawns a
+local Python echo server over stdio). Tests write only to a temporary directory,
+so running the suite never touches your real `~/.saathi` memory or git repository.
 
 ---
 
@@ -37,7 +37,7 @@ pytest
 Expected output ends with a line like:
 
 ```text
-68 passed in 22.57s
+104 passed in 24.09s
 ```
 
 ### Run one file
@@ -197,13 +197,14 @@ The two-scope memory store: save/get, delete (returns `True`/`False`), clear, an
 that a **project** value overrides a **global** value for the same key. Also that
 a corrupt JSON file is tolerated as empty instead of crashing.
 
-### `test_graph.py` (5 tests)
+### `test_graph.py` (6 tests)
 
 LangGraph wiring **without calling Ollama**: the graph compiles with the expected
 `agent` and `tools` nodes, the SQLite checkpoint DB is created, checkpoint history
-is queryable, `close_graph()` is safe to call twice, and — as a regression guard —
-the `agent` node has **only conditional** outgoing edges (an unconditional
-`agent → END` edge would break the ReAct loop).
+is queryable, `close_graph()` is safe to call twice, the `agent` node has **only
+conditional** outgoing edges (regression guard — an unconditional `agent → END`
+would break the ReAct loop), and a fresh `thread_id` **isolates** a compacted
+history from the old thread's accumulated messages.
 
 ### `test_diagnostics.py` (1 test)
 
@@ -222,6 +223,42 @@ The non-interactive `--print` mode: picking the final assistant message,
 collecting tool calls and summing token usage for the JSON payload, and
 rejecting an invalid `--output-format` with exit code 2 (before any graph is
 built, so it stays offline).
+
+### `test_custom_commands.py` (6 tests)
+
+User-defined `/commands` from `.saathi/commands/*.md`: loading files keyed by
+lower-cased stem (ignoring non-`.md`), an empty result for a missing directory,
+and `$ARGS` rendering (substitution, append-when-no-token, and unchanged).
+
+### `test_logging.py` (4 tests)
+
+Structured logging: `configure_logging` runs at both levels, `get_logger` emits
+structured events, and the tool node logs `tool_blocked` / `tool_unknown` events
+(captured with `structlog.testing.capture_logs`).
+
+### `test_retry.py` (6 tests)
+
+Async retry/backoff: success on the first try (no sleep), retry-then-succeed with
+exponential delays, exhausting all attempts, non-retryable errors propagating
+immediately, `max_delay` capping, and the `on_retry` callback. Uses an injected
+recording sleep, so tests never actually wait.
+
+### `test_compaction.py` (7 tests)
+
+History compaction with a fake LLM: token estimation, the `needs_compaction`
+threshold, splitting at a **user-turn boundary** (so the retained tail never
+starts with an orphaned `ToolMessage`), a no-op when there aren't enough turns,
+summarizing older turns into a leading summary message, and a smaller token
+estimate afterward.
+
+### `test_mcp.py` (12 tests)
+
+MCP client: config normalization (`mcpServers` wrapper vs flat, stdio/http
+transport inference, explicit transport, skipping entries without a
+command/url), graceful degradation (empty config, unreachable server → no tools,
+no raise), `_result_to_text` coercion (strings vs MCP content blocks), and a
+**live round-trip** against the bundled stdio echo server
+([`examples/mcp_echo_server.py`](../examples/mcp_echo_server.py)).
 
 ---
 

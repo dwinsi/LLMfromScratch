@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "echo": {
+      "command": "python",
+      "args": ["examples/mcp_echo_server.py"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    },
+    "example-http": {
+      "url": "http://localhost:8000/mcp/"
+    }
+  }
+}

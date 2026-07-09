@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     context_window: int = 32768
     max_tokens: int = 4096
     max_parallel_tools: int = 8
+    ollama_max_retries: int = 3
+    ollama_retry_base_delay: float = 1.0
+    review_min_confidence: int = 70
     brave_api_key: str | None = None
     debug: bool = False
 

@@ -21,6 +21,25 @@ from langchain_core.tools import BaseTool
 from saathi.agent.state import AgentState
 from saathi.config import settings
 from saathi.hooks.runner import HookRunner
+from saathi.logging_config import get_logger
+
+log = get_logger()
+
+
+def _result_to_text(result: object) -> str:
+    """Coerce a tool result to text. Built-in tools return strings; MCP tools
+    return a list of content blocks like ``[{"type": "text", "text": "..."}]``."""
+    if isinstance(result, str):
+        return result
+    if isinstance(result, list):
+        parts: list[str] = []
+        for item in result:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(str(item.get("text", "")))
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    return str(result)
 
 
 def make_hooked_tool_node(tools: list[BaseTool], hook_runner: HookRunner):
@@ -37,6 +56,7 @@ def make_hooked_tool_node(tools: list[BaseTool], hook_runner: HookRunner):
         if reason is None:
             reason = await hook_runner.run_pre_tool(name, args)
         if reason is not None:
+            log.warning("tool_blocked", tool=name, reason=reason)
             return ToolMessage(
                 content=f"BLOCKED: {reason}. The tool was not executed.",
                 tool_call_id=call_id,
@@ -46,20 +66,25 @@ def make_hooked_tool_node(tools: list[BaseTool], hook_runner: HookRunner):
         # 2. execute the tool
         tool = tools_by_name.get(name)
         if tool is None:
+            log.warning("tool_unknown", tool=name)
             return ToolMessage(
                 content=f"Error: unknown tool '{name}'.",
                 tool_call_id=call_id,
                 name=name,
             )
+        log.debug("tool_start", tool=name, args=args)
         try:
             result = await tool.ainvoke(args)
         except Exception as exc:  # mirror ToolNode's default error handling
+            log.error("tool_error", tool=name, error=str(exc))
             result = f"Error executing {name}: {exc}"
+        else:
+            log.debug("tool_ok", tool=name)
 
         # 3. post_tool hook (best-effort side effects)
         await hook_runner.run("post_tool", name, args)
 
-        return ToolMessage(content=str(result), tool_call_id=call_id, name=name)
+        return ToolMessage(content=_result_to_text(result), tool_call_id=call_id, name=name)
 
     async def _guarded(call: dict) -> ToolMessage:
         async with semaphore:

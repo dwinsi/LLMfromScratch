@@ -37,8 +37,10 @@ HELP_TEXT = r"""
 | `clear` | Reset conversation history |
 | `quit` / `exit` | End session |
 | `/init` | Scan the repo and generate a SAATHI.md |
+| `/revise-saathi-md` | Update SAATHI.md with this session's learnings |
 | `/commit` | Review changes and create a git commit |
 | `/doctor` | Health check: Ollama, model, memory, git |
+| `/commands` | List custom commands from `.saathi/commands/` |
 | `/context <path> ...` | Scope agent to files/folders |
 | `/context` | Clear scope |
 | `/compact` | Summarize history to free tokens |

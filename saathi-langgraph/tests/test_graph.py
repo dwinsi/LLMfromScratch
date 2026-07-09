@@ -59,6 +59,50 @@ async def test_close_graph_is_idempotent(tmp_path: Path) -> None:
     await close_graph(graph)  # second call must not raise
 
 
+async def test_fresh_thread_isolates_compacted_history(tmp_path: Path) -> None:
+    """Compaction switches thread_id; the new thread must not inherit the old
+    thread's accumulated messages (the reason we can't just trim in place)."""
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+    graph = await _build(tmp_path)
+    try:
+        t1 = {"configurable": {"thread_id": "t1"}}
+        await graph.aupdate_state(
+            t1,
+            {
+                "messages": [
+                    HumanMessage(content="h1", id="1"),
+                    AIMessage(content="a1", id="2"),
+                    HumanMessage(content="h2", id="3"),
+                    AIMessage(content="a2", id="4"),
+                ]
+            },
+            as_node="agent",
+        )
+        st1 = await graph.aget_state(t1)
+        assert len(st1.values["messages"]) == 4
+
+        # Continue on a fresh thread with a compacted list.
+        t2 = {"configurable": {"thread_id": "t2"}}
+        await graph.aupdate_state(
+            t2,
+            {
+                "messages": [
+                    SystemMessage(content="summary", id="s"),
+                    HumanMessage(content="h2", id="3"),
+                    AIMessage(content="a2", id="4"),
+                ]
+            },
+            as_node="agent",
+        )
+        st2 = await graph.aget_state(t2)
+        assert [m.content for m in st2.values["messages"]] == ["summary", "h2", "a2"]
+        # the old h1/a1 are NOT carried into the new thread
+        assert len(st2.values["messages"]) == 3
+    finally:
+        await close_graph(graph)
+
+
 async def test_agent_only_ends_conditionally(tmp_path: Path) -> None:
     """Regression: the agent node must not have an unconditional edge to END.
 

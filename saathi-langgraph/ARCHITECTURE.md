@@ -380,6 +380,15 @@ Tools return error *strings* instead of raising; the tool node converts every
 outcome (success, block, unknown tool, exception) into a `ToolMessage`. One bad
 call can't take down a turn.
 
+### Resilience: retry with backoff
+
+The LLM call in the agent node is wrapped in a narrow retry
+([`retry.py`](src/saathi/retry.py)): only *connection-establishment* failures
+(server not up yet / briefly unreachable) are retried, with exponential backoff.
+Read timeouts mid-generation are deliberately **not** retried — that would
+duplicate output and time out again. Attempts/delay are configurable
+(`SAATHI_OLLAMA_MAX_RETRIES`, `SAATHI_OLLAMA_RETRY_BASE_DELAY`).
+
 ### Security controls
 
 - **Sensitive-path blocking** (`block_paths`) refuses writes to `*.env`, keys, etc.
@@ -393,12 +402,25 @@ linting, tests, and policy **without touching core code** — the same idea as
 web-framework middleware or aspect-oriented "advice".
 → [`hooks/runner.py`](src/saathi/hooks/runner.py)
 
+### Extensibility via MCP
+
+External [Model Context Protocol](https://modelcontextprotocol.io) servers
+declared in `.saathi/mcp.json` are connected at startup via
+`langchain-mcp-adapters`; their tools are merged into the toolset and flow through
+the same hooked, parallel tool node as built-ins. Loading is best-effort — a
+broken server is skipped, never fatal. MCP tools return content blocks, which the
+tool node coerces to text (`_result_to_text`).
+→ [`mcp_client.py`](src/saathi/mcp_client.py)
+
 ### Observability
 
 - Per-turn **token & latency footer** from streamed usage metadata.
 - **`/doctor`** health checks (Ollama reachability, model presence, writable dirs,
   `git`/`patch` on PATH).
-→ [`diagnostics.py`](src/saathi/diagnostics.py)
+- **Structured logging** (`structlog`) on the security-relevant paths — tool
+  blocks/errors and hook runs. Quiet by default (WARNING+), `--debug` drops to
+  DEBUG; all log output goes to stderr so stdout stays clean for `--print`.
+→ [`diagnostics.py`](src/saathi/diagnostics.py), [`logging_config.py`](src/saathi/logging_config.py)
 
 ### Persistence & recovery
 
@@ -419,7 +441,8 @@ codepages; `run_bash` and hooks branch on `sys.platform`.
 
 ### Automated, isolated testing
 
-68 offline tests with fixtures, `tmp_path` isolation, and a regression test for the
+104 tests (offline except a bundled stdio MCP echo server) with fixtures,
+`tmp_path` isolation, and a regression test for the
 graph-loop wiring. → [`tests/`](tests/README.md)
 
 ---
@@ -436,6 +459,8 @@ graph-loop wiring. → [`tests/`](tests/README.md)
 | Local Ollama | Cloud LLM | Privacy, zero cost, full transparency — the project's premise |
 | `pydantic-settings` | Hardcoded constants | Typed, validated, 12-factor config; no secrets in code |
 | Semaphore-bounded `gather` | Unbounded parallelism | Throughput without exhausting file handles / subprocesses |
+| Compaction → fresh `thread_id` | `RemoveMessage` surgery on the same thread | `add_messages` only appends, so a new thread cleanly rebaselines the summarized history; `/rollback` can't cross a compaction (acceptable) |
+| Retry connect errors only | Retry all failures | Re-running a slow/mid-stream response duplicates output; only connection setup is safe to retry |
 
 ---
 

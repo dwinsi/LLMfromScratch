@@ -26,6 +26,10 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from saathi.logging_config import get_logger
+
+log = get_logger()
+
 _CONFIG_PATH = Path(".saathi") / "hooks.json"
 _PATH_ARG_KEYS = ("path", "file", "filepath", "file_path")
 
@@ -134,7 +138,9 @@ async def _run_command(cmd: str, env: dict[str, str]) -> HookResult:
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
         output = (stdout or b"").decode("utf-8", errors="replace")
-        return HookResult(ok=proc.returncode == 0, output=output)
+        ok = proc.returncode == 0
+        log.debug("hook_run", cmd=cmd, ok=ok, code=proc.returncode)
+        return HookResult(ok=ok, output=output)
     except TimeoutError:
         return HookResult(ok=False, output=f"hook timed out: {cmd}")
     except Exception as e:  # noqa: BLE001
