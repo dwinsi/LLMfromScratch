@@ -39,6 +39,7 @@ HELP_TEXT = r"""
 | `/init` | Scan the repo and generate a SAATHI.md |
 | `/revise-saathi-md` | Update SAATHI.md with this session's learnings |
 | `/commit` | Review changes and create a git commit |
+| `/code-review` | Multi-reviewer review of the working diff |
 | `/doctor` | Health check: Ollama, model, memory, git |
 | `/commands` | List custom commands from `.saathi/commands/` |
 | `/context <path> ...` | Scope agent to files/folders |

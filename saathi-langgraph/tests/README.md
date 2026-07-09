@@ -1,9 +1,10 @@
 # Saathi Test Suite
 
-A `pytest` suite of **104 tests** covering the whole application. It runs
-**offline** — no Ollama server, no network, no API keys (one MCP test spawns a
-local Python echo server over stdio). Tests write only to a temporary directory,
-so running the suite never touches your real `~/.saathi` memory or git repository.
+A `pytest` suite of **114 tests** (plus one opt-in [live test](#the-live-end-to-end-test))
+covering the whole application. The default run is **offline** — no Ollama server,
+no network, no API keys (one MCP test spawns a local Python echo server over
+stdio). Tests write only to a temporary directory, so running the suite never
+touches your real `~/.saathi` memory or git repository.
 
 ---
 
@@ -37,7 +38,7 @@ pytest
 Expected output ends with a line like:
 
 ```text
-104 passed in 24.09s
+114 passed in 27.41s
 ```
 
 ### Run one file
@@ -89,6 +90,19 @@ pytest -x
 ```bash
 pytest --lf
 ```
+
+### The live end-to-end test
+
+One test (`test_e2e_live.py`) runs a real turn against a running Ollama. It is
+**deselected by default** (the default suite is fully offline) and only runs when
+you ask for it:
+
+```bash
+pytest -m live
+```
+
+If Ollama isn't reachable or the model isn't pulled, it **skips** (never fails),
+so it's safe to run anywhere. Expect it to take a while — it's a real LLM turn.
 
 > **Tip:** if the `pytest` command isn't found, call it through the venv
 > explicitly: `./.venv/Scripts/python.exe -m pytest` (Windows) or
@@ -259,6 +273,22 @@ command/url), graceful degradation (empty config, unreachable server → no tool
 no raise), `_result_to_text` coercion (strings vs MCP content blocks), and a
 **live round-trip** against the bundled stdio echo server
 ([`examples/mcp_echo_server.py`](../examples/mcp_echo_server.py)).
+
+### `test_review.py` (10 tests)
+
+Multi-reviewer code review with a fake LLM: `Finding` validation (confidence
+clamping, severity normalization, line coercion), tolerant JSON extraction
+(plain / fenced / prose-wrapped / garbage), `parse_findings` (object & array
+forms, skipping non-dict items), and `run_review` aggregation — concurrency
+across reviewers, confidence filtering, severity ranking, and a failed reviewer
+degrading to no findings.
+
+### `test_e2e_live.py` (1 test, opt-in)
+
+A real one-turn agent conversation against a running Ollama, exercising the whole
+graph end to end. Marked `live` and **deselected by default**; run with
+`pytest -m live`. Skips (never fails) when Ollama is unreachable or the model
+isn't pulled.
 
 ---
 

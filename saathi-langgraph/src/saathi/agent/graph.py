@@ -18,20 +18,16 @@ from saathi.hooks.runner import HookRunner
 from saathi.memory.store import MemoryStore
 
 
-def make_llm(model_id: str, *, json_format: bool = False) -> ChatOllama:
+def make_llm(model_id: str) -> ChatOllama:
     """Build an (unbound) ChatOllama from settings — used for the agent, history
-    summarization, and code review. Set ``json_format`` to force JSON output
-    (Ollama's format mode), used by the reviewers."""
-    kwargs: dict = dict(
+    summarization, and code review."""
+    return ChatOllama(
         model=model_id,
         base_url=settings.ollama_base_url,
         temperature=settings.temperature,
         num_ctx=settings.context_window,
         num_predict=settings.max_tokens,
     )
-    if json_format:
-        kwargs["format"] = "json"
-    return ChatOllama(**kwargs)
 
 
 async def build_graph(

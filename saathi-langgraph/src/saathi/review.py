@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -58,26 +59,26 @@ class Finding(BaseModel):
 
     @field_validator("confidence", mode="before")
     @classmethod
-    def _clamp_confidence(cls, v: object) -> int:
+    def _clamp_confidence(cls, v: Any) -> int:
         try:
-            n = int(v)  # type: ignore[arg-type]
+            n = int(v)
         except (TypeError, ValueError):
             return 50
         return max(0, min(100, n))
 
     @field_validator("severity", mode="before")
     @classmethod
-    def _normalize_severity(cls, v: object) -> str:
+    def _normalize_severity(cls, v: Any) -> str:
         s = str(v).lower().strip()
         return s if s in _SEVERITY_RANK else "medium"
 
     @field_validator("line", mode="before")
     @classmethod
-    def _coerce_line(cls, v: object) -> int | None:
+    def _coerce_line(cls, v: Any) -> int | None:
         if v in (None, "", "null"):
             return None
         try:
-            return int(v)  # type: ignore[arg-type]
+            return int(v)
         except (TypeError, ValueError):
             return None
 
@@ -90,16 +91,19 @@ def _extract_json(text: str) -> dict | list | None:
         if text.lstrip().lower().startswith("json"):
             text = text.lstrip()[4:]
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, (dict, list)) else None
     except json.JSONDecodeError:
         pass
     for open_c, close_c in (("{", "}"), ("[", "]")):
         start, end = text.find(open_c), text.rfind(close_c)
         if start != -1 and end > start:
             try:
-                return json.loads(text[start : end + 1])
+                parsed = json.loads(text[start : end + 1])
             except json.JSONDecodeError:
                 continue
+            if isinstance(parsed, (dict, list)):
+                return parsed
     return None
 
 
@@ -202,9 +206,7 @@ _SEVERITY_COLOR = {"high": "red", "medium": "yellow", "low": "blue"}
 def render_review(findings: list[Finding], min_confidence: int) -> None:
     """Print review findings as severity-colored panels, most severe first."""
     if not findings:
-        console.print(
-            f"[green]✓ No findings at or above {min_confidence}% confidence.[/green]"
-        )
+        console.print(f"[green]✓ No findings at or above {min_confidence}% confidence.[/green]")
         return
     console.print(f"\n[bold]Code review — {len(findings)} finding(s)[/bold]\n")
     for f in findings:

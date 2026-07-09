@@ -74,4 +74,8 @@ warn_return_any = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-ra -q"
+# Live tests hit a running Ollama; deselected by default. Run with: pytest -m live
+addopts = "-ra -q -m 'not live'"
+markers = [
+    "live: end-to-end test that requires a running Ollama (run with `pytest -m live`)",
+]

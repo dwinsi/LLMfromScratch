@@ -441,9 +441,10 @@ codepages; `run_bash` and hooks branch on `sys.platform`.
 
 ### Automated, isolated testing
 
-104 tests (offline except a bundled stdio MCP echo server) with fixtures,
-`tmp_path` isolation, and a regression test for the
-graph-loop wiring. → [`tests/`](tests/README.md)
+114 tests (offline except a bundled stdio MCP echo server) with fixtures,
+`tmp_path` isolation, and a regression test for the graph-loop wiring — plus an
+opt-in live e2e test (`pytest -m live`) that skips when Ollama is unavailable.
+→ [`tests/`](tests/README.md)
 
 ---
 
@@ -459,6 +460,7 @@ graph-loop wiring. → [`tests/`](tests/README.md)
 | Local Ollama | Cloud LLM | Privacy, zero cost, full transparency — the project's premise |
 | `pydantic-settings` | Hardcoded constants | Typed, validated, 12-factor config; no secrets in code |
 | Semaphore-bounded `gather` | Unbounded parallelism | Throughput without exhausting file handles / subprocesses |
+| `/code-review` as a code-orchestrated workflow | A review "agent" with tools | The task is well-specified (analyze a diff); parallel structured LLM calls with confidence filtering are more controllable than an open-ended agent |
 | Compaction → fresh `thread_id` | `RemoveMessage` surgery on the same thread | `add_messages` only appends, so a new thread cleanly rebaselines the summarized history; `/rollback` can't cross a compaction (acceptable) |
 | Retry connect errors only | Retry all failures | Re-running a slow/mid-stream response duplicates output; only connection setup is safe to retry |
 

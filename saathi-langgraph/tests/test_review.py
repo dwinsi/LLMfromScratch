@@ -55,7 +55,7 @@ def test_line_is_coerced() -> None:
 def test_extract_json_plain_and_fenced() -> None:
     assert _extract_json('{"a": 1}') == {"a": 1}
     assert _extract_json('```json\n{"a": 1}\n```') == {"a": 1}
-    assert _extract_json("prose before {\"a\": 1} prose after") == {"a": 1}
+    assert _extract_json('prose before {"a": 1} prose after') == {"a": 1}
     assert _extract_json("no json here") is None
 
 

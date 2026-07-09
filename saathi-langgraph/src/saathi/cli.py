@@ -558,7 +558,9 @@ async def _interactive_session(model_id: str, context_paths: list[str]) -> None:
                 if not diff:
                     console.print("[dim]No uncommitted changes to review.[/dim]")
                     continue
-                review_llm = make_llm(model_id, json_format=True)
+                # No json_format: Ollama's grammar-constrained JSON mode is very
+                # slow on larger models; the tolerant parser recovers JSON anyway.
+                review_llm = make_llm(model_id)
                 spinner = ThinkingSpinner()
                 spinner.update("reviewing changes…")
                 spinner.start()

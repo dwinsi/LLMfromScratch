@@ -2,7 +2,7 @@
 
 A production-grade local coding agent powered by **LangGraph** and **Ollama** — the same features as saathi-cli, rebuilt on the 2026 stack.
 
-📐 **[ARCHITECTURE.md](ARCHITECTURE.md)** — LangGraph concepts, enterprise patterns, and diagrams · 🧪 **[tests/README.md](tests/README.md)** — how to run the test suite
+📐 **[ARCHITECTURE.md](ARCHITECTURE.md)** — LangGraph concepts, enterprise patterns, and diagrams · 🧪 **[tests/README.md](tests/README.md)** — how to run the test suite · 🖥️ **[docs/ollama-remote.md](docs/ollama-remote.md)** — run the model on a remote server
 
 ## What's new vs. saathi-cli
 
@@ -81,6 +81,7 @@ The JSON payload has `model`, `task`, `response`, `tool_calls`, and `usage`.
 | `/init` | Scan the repo and generate a `SAATHI.md` |
 | `/revise-saathi-md` | Update `SAATHI.md` with this session's learnings |
 | `/commit` | Review changes and create a git commit |
+| `/code-review` | Multi-reviewer review of the working diff |
 | `/doctor` | Health check: Ollama, model, memory dirs, git/patch |
 | `/context <path> ...` | Scope agent to files/folders |
 | `/context` | Clear scope |
@@ -187,6 +188,26 @@ Transient Ollama **connection** failures (server still starting up) are retried
 with exponential backoff — tune via `SAATHI_OLLAMA_MAX_RETRIES` and
 `SAATHI_OLLAMA_RETRY_BASE_DELAY`. Slow responses are not retried.
 
+## Code review
+
+`/code-review` runs several **specialist reviewers** over your uncommitted diff
+(`git diff HEAD`) — bugs, error-handling, design, and security — each returning
+structured findings with a **confidence score**. Findings below the threshold are
+dropped to cut noise, and the rest are shown ranked by severity:
+
+```
+Code review — 2 finding(s)
+
+╭─ HIGH 90% calc.py:2 (bugs) ─────────────────────────────╮
+│ Division by zero is unhandled when b == 0.              │
+│ → Guard against b == 0 or catch ZeroDivisionError.     │
+╰─────────────────────────────────────────────────────────╯
+```
+
+- The reviewers are dispatched concurrently (`asyncio.gather`); actual parallelism
+  depends on your Ollama server (`OLLAMA_NUM_PARALLEL`).
+- Tune the noise filter with `SAATHI_REVIEW_MIN_CONFIDENCE` (default 70).
+
 ## MCP servers
 
 Connect external [Model Context Protocol](https://modelcontextprotocol.io)
@@ -288,7 +309,7 @@ target path, when the tool has one).
 
 ## Testing
 
-An offline `pytest` suite lives in [`tests/`](tests/README.md) — 104 tests, no
+An offline `pytest` suite lives in [`tests/`](tests/README.md) — 114 tests, no
 Ollama or network needed.
 
 ```bash
