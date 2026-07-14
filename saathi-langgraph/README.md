@@ -2,7 +2,7 @@
 
 A production-grade local coding agent powered by **LangGraph** and **Ollama** — the same features as saathi-cli, rebuilt on the 2026 stack.
 
-📐 **[ARCHITECTURE.md](ARCHITECTURE.md)** — LangGraph concepts, enterprise patterns, and diagrams · 🧪 **[tests/README.md](tests/README.md)** — how to run the test suite · 🖥️ **[docs/ollama-remote.md](docs/ollama-remote.md)** — run the model on a remote server
+📐 **[ARCHITECTURE.md](ARCHITECTURE.md)** — LangGraph concepts, enterprise patterns, and diagrams · 🧪 **[tests/README.md](tests/README.md)** — how to run the test suite · 🖥️ **[docs/ollama-remote.md](docs/ollama-remote.md)** — run the model on a remote server · 🌐 **[docs/fastapi.md](docs/fastapi.md)** — REST API usage guide · 📖 **[docs/fastapi-book/](docs/fastapi-book/README.md)** — FastAPI book (16 chapters, beginner to advanced)
 
 ## What's new vs. saathi-cli
 
@@ -195,7 +195,7 @@ with exponential backoff — tune via `SAATHI_OLLAMA_MAX_RETRIES` and
 structured findings with a **confidence score**. Findings below the threshold are
 dropped to cut noise, and the rest are shown ranked by severity:
 
-```
+```text
 Code review — 2 finding(s)
 
 ╭─ HIGH 90% calc.py:2 (bugs) ─────────────────────────────╮

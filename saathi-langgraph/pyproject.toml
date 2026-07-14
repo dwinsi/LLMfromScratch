@@ -27,6 +27,9 @@ dependencies = [
     "duckduckgo-search>=6.2.0",
     "pyperclip>=1.9.0",
     "pyreadline3>=3.4.0 ; sys_platform == 'win32'",
+    # API server
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +42,7 @@ dev = [
 
 [project.scripts]
 saathi = "saathi.cli:app"
+saathi-api = "saathi.api.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/saathi"]
