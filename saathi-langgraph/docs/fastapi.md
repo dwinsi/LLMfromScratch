@@ -55,12 +55,63 @@ PYTHONPATH=saathi-langgraph/src .venv/Scripts/python.exe -m saathi.api.server
 
 ---
 
+## Web UI
+
+Open **`http://localhost:8000`** in your browser to get a full dark-themed chat interface — no extra setup needed.
+
+```uri
+http://localhost:8000        ← chat UI (served from api/static/index.html)
+http://localhost:8000/docs   ← Swagger UI (API reference)
+http://localhost:8000/redoc  ← ReDoc
+```
+
+### What the UI provides
+
+| Feature | Detail |
+| --- | --- |
+| **Streaming chat** | Tokens stream in real-time via `/chat/stream` (SSE) |
+| **Mode selector** | Switch between Default / Explain / Refactor / Debug per message |
+| **Context paths** | Optionally scope the agent to specific files or directories |
+| **Session management** | Multiple named sessions in the sidebar, each with its own thread ID |
+| **Health indicator** | Live coloured dot in the header — polls `/health` on load |
+| **Model info panel** | Shows model name, temperature, context window pulled from `/model/info` |
+| **Markdown rendering** | Code blocks, inline code, bold, and headings rendered inside bubbles |
+
+### How the UI connects to FastAPI
+
+The UI is a single HTML file (`api/static/index.html`) mounted on `StaticFiles` and served at `/`. It talks to the same API endpoints you'd call with `curl`:
+
+```endpoints
+GET  /health          → status dot colour
+GET  /model/info      → sidebar model panel
+POST /chat/stream     → streaming SSE tokens into the chat bubble
+```
+
+The `StaticFiles` mount and the redirect of `/` to `index.html` live in `api/main.py`:
+
+```python
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+_STATIC = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=_STATIC), name="static")
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return FileResponse(_STATIC / "index.html")
+```
+
+> **FastAPI concept:** `StaticFiles` is a sub-application mounted at a path prefix — any request to `/static/*` is handled entirely by Starlette's file server, never reaching your route handlers.
+
+---
+
 ## Interactive API docs
 
 Once the server is running, open your browser:
 
 | URL | What you get |
 | --- | --- |
+| `http://localhost:8000` | **Chat UI** — full graphical interface |
 | `http://localhost:8000/docs` | **Swagger UI** — try every endpoint live |
 | `http://localhost:8000/redoc` | ReDoc — cleaner read-only reference |
 | `http://localhost:8000/openapi.json` | Raw OpenAPI schema |
@@ -279,6 +330,8 @@ If you're learning FastAPI, here's where each concept appears:
 | **Path parameters** | `api/routes/sessions.py` | `/{session_id}/history` |
 | **`response_model`** | every endpoint | Auto-serialises + documents return type |
 | **`StreamingResponse`** | `api/routes/chat.py` | SSE token streaming |
+| **`StaticFiles`** | `api/main.py` | Mount a directory to serve static files (the chat UI) |
+| **`FileResponse`** | `api/main.py` | Return a file directly as an HTTP response |
 | **Async handlers** | all routes | `async def` + `await graph.ainvoke()` |
 
 ---
@@ -287,10 +340,12 @@ If you're learning FastAPI, here's where each concept appears:
 
 ```folder
 src/saathi/api/
-├── main.py          # FastAPI app + lifespan
+├── main.py          # FastAPI app + lifespan + StaticFiles mount
 ├── server.py        # saathi-api CLI entry point
 ├── dependencies.py  # Shared graph/memory singletons via Depends()
 ├── schemas.py       # Pydantic request & response models
+├── static/
+│   └── index.html   # Self-contained chat UI (served at /)
 └── routes/
     ├── health.py    # GET  /health
     ├── model.py     # GET  /model/info
