@@ -1,3 +1,5 @@
+# explain
+
 Read and explain the following file(s) or symbol: $ARGS
 
 Use read_file / search_across_files to gather context. Explain what the code
