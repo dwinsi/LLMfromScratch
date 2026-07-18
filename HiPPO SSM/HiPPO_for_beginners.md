@@ -1,339 +1,350 @@
-# HiPPO Explained Simply — A Beginner's Guide
+# HiPPO: How AI Models Remember Long Sequences
 
-*Understanding how AI models remember long sequences, starting from zero. Math background needed: up to 12th standard (basic calculus, vectors, and matrices).*
-
----
-
-## What this guide is about
-
-Modern AI models like Mamba can read very long texts efficiently. The secret behind them is a clever idea called **HiPPO**. This guide explains HiPPO from the ground up, in plain language, with small examples you can follow by hand.
-
-We will avoid heavy notation. Whenever a formula appears, we will explain every symbol in words first.
-
-Here is the one question HiPPO answers:
-
-> **If a model can only remember a small, fixed amount of information, what is the smartest way to summarize everything it has read so far?**
-
-That's it. Everything below builds toward answering this well.
+This guide explains one of the most elegant ideas in modern AI: how a model can read a million words and still remember what happened at the very beginning, using only a small fixed amount of memory. No prior machine learning knowledge is required. If you are comfortable with basic algebra (things like `2x + 3`) you can follow everything here.
 
 ---
 
-## Table of Contents
+## The problem this guide solves
 
-1. [The core problem — a memory that never grows](#1-the-core-problem)
-2. [The big idea — store a summary, not the raw data](#2-the-big-idea)
-3. [A warm-up: summarizing numbers](#3-a-warm-up-summarizing-numbers)
-4. [Building blocks — the "shapes" we summarize with](#4-building-blocks)
-5. [Legendre polynomials — the shapes HiPPO uses](#5-legendre-polynomials)
-6. [Putting it together — the HiPPO recipe](#6-the-hippo-recipe)
-7. [A complete worked example](#7-a-complete-worked-example)
-8. [How the model updates its memory each step](#8-updating-memory)
-9. [Why the memory never blows up](#9-why-memory-never-blows-up)
-10. [Where HiPPO fits — the road to Mamba](#10-where-hippo-fits)
-11. [Quick reference and further reading](#11-quick-reference)
+Imagine you are reading a long book, one word at a time. Someone will stop you at a random point and ask: "What has happened in the story so far?"
 
----
+You have two choices.
 
-## 1. The Core Problem
+**Choice A: remember every word.** This works perfectly but is impossible at scale. One million words requires one million slots of memory. Every new word makes the memory larger. This is how the attention mechanism inside GPT-style models works, and it is why those models get slow and expensive on very long texts.
 
-Imagine you are reading a very long book, one word at a time. Someone will stop you at any random point and ask: *"What has happened in the story so far?"*
+**Choice B: keep a short summary.** You carry a notepad with room for exactly 64 numbers. As you read each word, you update the notepad. The notepad never grows. Whether you have read 10 words or 10 million, it always holds exactly 64 numbers.
 
-You have two options.
+**HiPPO is Choice B done extremely well.** The clever part is figuring out what those 64 numbers should represent so that you can reconstruct the story from them surprisingly faithfully, even after millions of words.
 
-**Option A — remember every word.** This works perfectly, but it is impossible in practice. If the book has a million words, you would need a million slots of memory. And every new word makes the memory bigger. This is roughly how "attention" (the mechanism inside GPT-style models) works, and it is why those models get slow and expensive on long texts.
+That is the one question HiPPO answers:
 
-**Option B — keep a short summary.** You keep, say, a small notepad with room for only 64 numbers. As you read each word, you update the notepad. The notepad never grows — it always holds exactly 64 numbers, whether you've read 10 words or 10 million.
-
-Option B is what HiPPO does. The obvious worry is: *won't you lose information?* Yes, some. The whole genius of HiPPO is figuring out **how to summarize so that you lose as little as possible** — so that from those 64 numbers, you can reconstruct the story surprisingly well.
+> If a model can only keep a small, fixed amount of information, what is the smartest way to summarize everything it has read so far?
 
 ---
 
-## 2. The Big Idea
+## The key insight: store the shape, not the data
 
-Here is the shift in thinking that makes HiPPO work.
+Instead of storing the actual words or data values, HiPPO stores a **description of the overall shape** of the history.
 
-Instead of storing the actual words (or actual data values), HiPPO stores a **description of the overall shape** of the history.
-
-Think about how you might describe a graph to a friend over the phone. You wouldn't read out every single point. You'd say things like:
+Think about how you might describe a graph to a friend over the phone. You would not read out every single data point. You would say things like:
 
 - "On average it sits around 5." (the overall level)
-- "It's generally rising." (the trend)
+- "It is generally rising." (the trend)
 - "It curves upward in the middle." (the bend)
-- "There's a little wiggle near the end." (finer detail)
+- "There is a little wiggle near the end." (finer detail)
 
-Each of those statements is **one number** capturing **one aspect** of the shape. Put enough of them together, and your friend can draw a graph that looks almost exactly like the original — without ever hearing the individual points.
+Each of those statements is one number capturing one aspect of the shape. Put enough of them together and your friend can draw a graph that looks almost exactly like the original, without ever hearing the individual points.
 
-HiPPO does exactly this. It stores a handful of numbers, where:
+HiPPO does exactly this. Its memory is a list of numbers where:
+
 - the first number captures the average level,
 - the second captures the trend (rising or falling),
-- the third captures the curve,
+- the third captures the curvature,
 - and so on, each number adding finer detail.
 
-These numbers are called **coefficients**, and together they are the model's memory (its "hidden state").
+These numbers are called **coefficients**. Together they form the model's hidden state.
 
 ---
 
-## 3. A Warm-Up: Summarizing Numbers
+## A warm-up: summarizing a simple list
 
-Before functions, let's summarize a simple list of numbers, because the idea is the same.
+Before working with continuous signals, let us practice on something simpler.
 
 Suppose you see the numbers: **2, 4, 6, 8**.
 
 You could describe them with just two facts:
-- **Average = 5** (the level: (2+4+6+8)/4 = 5)
-- **Trend = +2 each step** (they go up by 2 each time)
 
-From these two facts — "start around 5, rising by 2" — you can rebuild the list very closely: 2, 4, 6, 8. You compressed four numbers into two, with no loss, because the data was simple (a straight line).
+- **Average = 5** (the level: (2 + 4 + 6 + 8) / 4 = 5)
+- **Trend = +2 per step** (they rise by 2 each time)
 
-If the data were more complicated (curving up and down), you'd need more facts: a curve number, a wiggle number, and so on. Each extra fact captures a finer detail.
+From these two facts you can rebuild the list: 2, 4, 6, 8. You compressed four numbers into two with no loss, because the data was a perfect straight line. Simple data needs few summary numbers. Complex, wiggly data needs more.
 
-**This is the entire philosophy of HiPPO.** Store a few well-chosen summary numbers. Simple histories need few; complex histories need more. The model typically keeps 16 to 64 such numbers.
-
-The rest of this guide answers two questions:
-1. What exactly are the "aspects" we measure? (Answer: Legendre polynomials — Section 5.)
-2. How do we update the summary numbers as new data arrives, without redoing everything? (Answer: a simple matrix multiplication — Section 8.)
+This is the entire philosophy of HiPPO: store a small number of well-chosen summary numbers. The model typically keeps 16 to 64 of them.
 
 ---
 
-## 4. Building Blocks
+## Building blocks: reference shapes
 
-To describe the shape of a history, we need a set of standard "reference shapes." We measure how much of each reference shape is present in our data.
+To describe the shape of a history, you need a set of standard reference shapes. You then measure how much of each reference shape is present in your data.
 
-### An analogy you already know: music
+### The music analogy
 
-Any sound can be broken into pure tones — a low hum, a middle note, a high note, and so on. A sound engineer stores the *volume of each tone* rather than the raw sound wave. A few tone-volumes can reconstruct the sound. This is the idea behind audio compression (like MP3).
+Any sound can be broken into pure tones: a low hum, a middle note, a high note. A sound engineer stores the volume of each tone rather than the raw waveform. A handful of tone-volumes can reconstruct the original sound. This is the idea behind MP3 audio compression.
 
 The "pure tones" are the reference shapes. The "volume of each tone" is a coefficient.
 
 ### HiPPO's reference shapes
 
-HiPPO uses reference shapes that are good for describing *trends over time*. They are:
+HiPPO uses reference shapes that are good for describing patterns over time:
 
-- **Shape 0:** a flat line → measures the **average**
-- **Shape 1:** a straight slope → measures the **trend** (up or down)
-- **Shape 2:** a gentle U or ∩ curve → measures the **curvature**
-- **Shape 3:** an S-shaped wiggle → measures **finer oscillation**
-- ... and so on, each one wigglier than the last.
+- **Shape 0:** a flat horizontal line, measures the average level
+- **Shape 1:** a straight diagonal slope, measures the trend (rising or falling)
+- **Shape 2:** a gentle U-shape or inverted-U, measures the curvature
+- **Shape 3:** an S-shaped wiggle, measures finer oscillation
+- and so on, each shape wigglier than the previous one
 
-These specific shapes are called **Legendre polynomials**. Let's meet them properly.
-
----
-
-## 5. Legendre Polynomials
-
-Don't be scared by the name. A "polynomial" is just an expression like $x$, or $3x^2 - 1$, or $x^3 - x$. The Legendre polynomials are a specific, famous list of them.
-
-### The first four
-
-Here they are (we write the variable as $x$, ranging from $-1$ to $1$):
-
-| Name | Formula | What shape it is | What it measures |
-|------|---------|------------------|------------------|
-| $P_0$ | $1$ | a flat horizontal line | the average level |
-| $P_1$ | $x$ | a straight diagonal line | the trend (slope) |
-| $P_2$ | $\tfrac{1}{2}(3x^2 - 1)$ | a U-shaped curve | the curvature |
-| $P_3$ | $\tfrac{1}{2}(5x^3 - 3x)$ | an S-shaped wiggle | finer wiggle |
-
-If you plotted these from $x = -1$ to $x = 1$, you'd see: a flat line, a slope, a U, and an S. Each is "wigglier" than the one before.
-
-### Where do these formulas come from? (Building them yourself)
-
-You don't have to take these on faith. There's a simple procedure to build them, one at a time. The rule is:
-
-> **Start with the simple powers $1, x, x^2, x^3, \dots$ and adjust each one so it is "independent" from all the previous ones.**
-
-"Independent" has a precise meaning we'll explain in a moment. Let's build the first three.
-
-**Building $P_0$:** Just take the simplest thing, a constant. Set $P_0 = 1$. Done.
-
-**Building $P_1$:** Start with $x$. We need to check whether $x$ is already independent from $P_0 = 1$. The test for independence is: *multiply the two shapes together, then find the area under the resulting curve from $-1$ to $1$. If the area is zero, they are independent.*
-
-For $x$ and $1$: multiply to get $x$, and the area under $x$ from $-1$ to $1$ is zero (the positive half and negative half cancel). So $x$ is already independent from $1$. Set $P_1 = x$.
-
-**Building $P_2$:** Start with $x^2$. Now check it against both $P_0$ and $P_1$.
-
-- Against $P_0 = 1$: multiply to get $x^2$; the area under $x^2$ from $-1$ to $1$ is $\tfrac{2}{3}$ (not zero!). So $x^2$ is **not** independent from the constant — it has some "average level" mixed in. We must subtract that out.
-- The amount to subtract is $\tfrac{2/3}{2} = \tfrac{1}{3}$ (the mixed-in amount divided by the "size" of $P_0$, which is 2).
-
-So we form $x^2 - \tfrac{1}{3}$.
-
-- Against $P_1 = x$: multiply $x^2$ by $x$ to get $x^3$; the area under $x^3$ from $-1$ to $1$ is zero. Good, nothing to subtract there.
-
-So the raw shape is $x^2 - \tfrac{1}{3}$. By tradition we rescale it so its value at $x = 1$ equals $1$: at $x=1$, $x^2 - \tfrac13 = \tfrac23$, so multiply by $\tfrac32$ to get $\tfrac{3}{2}x^2 - \tfrac{1}{2} = \tfrac{1}{2}(3x^2 - 1)$. That's $P_2$. ✓
-
-This procedure (called **Gram–Schmidt**, if you want the technical name) generates every Legendre polynomial. Each new one is the next power, cleaned of any overlap with the earlier ones.
-
-### Why "independence" matters
-
-When two reference shapes are independent (their product has zero area), it means each captures **completely separate information**. Knowing the average tells you nothing about the trend; knowing the trend tells you nothing about the curve. No wasted storage — every summary number pulls its own weight.
-
-This is exactly like the three directions in space (left-right, forward-back, up-down): moving in one direction doesn't change your position in the others. They're independent, so three numbers fully describe your position. Legendre polynomials are the "independent directions" for describing shapes.
+These specific shapes are called **Legendre polynomials**.
 
 ---
 
-## 6. The HiPPO Recipe
+## Legendre polynomials
 
-Now we combine the pieces. At any moment, HiPPO does three things.
+Do not be scared by the name. A polynomial is simply an expression like `x`, or `3x^2 - 1`, or `x^3 - x`. The Legendre polynomials are a specific, well-known list of them.
 
-**Step 1 — Look at the history.** All the data seen so far, from the start up to now.
+![The first four Legendre polynomials plotted from x = -1 to x = 1](figures/1_legendre_polynomials.png)
 
-**Step 2 — Measure how much of each reference shape is present.** For each Legendre shape (average, trend, curve, wiggle...), compute one number: how strongly does the history match that shape? This "matching" is done by multiplying the history by the shape and finding the area — the same independence test from Section 5, now used to measure.
+Here are the first four, written over the range x = -1 to x = 1:
 
-**Step 3 — Store those numbers.** The collection of numbers is the memory. If we use 4 shapes, the memory is 4 numbers. If we use 64 shapes, it's 64 numbers.
+| Name | Formula | Shape | What it captures |
+| --- | --- | --- | --- |
+| P0 | 1 | flat horizontal line | average level |
+| P1 | x | straight diagonal | trend (slope) |
+| P2 | (1/2)(3x^2 - 1) | U-shaped curve | curvature |
+| P3 | (1/2)(5x^3 - 3x) | S-shaped wiggle | finer oscillation |
 
-### The "weighting" — which moments count most
+If you plotted these from x = -1 to x = 1 you would see: a flat line, a slope, a U, and an S. Each is wigglier than the one before it. The image above shows exactly this.
 
-There's one more choice: **when we look at the history, do all past moments count equally, or do recent moments count more?**
+### Where these formulas come from
 
-HiPPO's main version (called **LegS**, for "Legendre Scaled") counts **all of history equally**. Whether something happened at the very beginning or just now, it gets equal say in the summary. As time goes on, the window simply stretches to always cover everything from the start until now.
+You do not have to take these on faith. There is a simple procedure that builds them one at a time. The rule is:
 
-This equal-weighting is what gives HiPPO its special power: it can remember things from very far back just as reliably as recent things. It doesn't have a fixed "forgetting horizon."
+> Start with the simple powers 1, x, x^2, x^3, ... and adjust each one so it is completely independent from all the previous ones.
 
-(There's an alternative version, **LegT**, that only looks at a fixed recent window and forgets everything older — like a memory buffer of fixed size. But LegS, with its equal weighting over all history, is the one used in modern models.)
+"Independent" has a precise meaning here: two shapes are independent if, when you multiply them together and find the area under the result, the area is exactly zero. This is the same idea as the three directions in space (left-right, forward-back, up-down): moving in one direction does not change your position in the others.
+
+Here is how the first three are built:
+
+**Building P0:** Take the simplest possible shape, a constant. Set P0 = 1. Done.
+
+**Building P1:** Start with `x`. Test independence from P0 = 1: multiply `x` by `1` to get `x`, and the area under `x` from -1 to 1 is zero (the positive half and negative half cancel exactly). So `x` is already independent from `1`. Set P1 = x.
+
+**Building P2:** Start with `x^2`. Test independence from P0 = 1: multiply `x^2` by `1` to get `x^2`, and the area under `x^2` from -1 to 1 is 2/3 (not zero). So `x^2` has some "average level" mixed in. We subtract that out, leaving `x^2 - 1/3`. After rescaling so that the value at x = 1 equals 1, we get `(1/2)(3x^2 - 1)`. That is P2.
+
+This procedure is called Gram-Schmidt. It generates every Legendre polynomial: each new one is the next power, cleaned of any overlap with the earlier ones.
+
+### Why independence matters
+
+When two reference shapes are independent, each one captures completely separate information. Knowing the average tells you nothing about the trend. Knowing the trend tells you nothing about the curvature. No storage is wasted, because every summary number pulls its own weight.
 
 ---
 
-## 7. A Complete Worked Example
+## The HiPPO recipe
 
-Let's make everything concrete with a tiny example using **3 numbers** of memory (3 Legendre shapes: average, trend, curve).
+Now we put the pieces together. At any moment, HiPPO does three things:
 
-Suppose the history so far is a simple **ramp** — a signal that rises steadily from 0 up to 1. (Picture a straight line going up.)
+**Step 1:** Look at the history. All the data seen so far, from the very beginning up to now.
+
+**Step 2:** Measure how much of each reference shape is present. For each Legendre shape (average, trend, curve, wiggle...), compute one number: how strongly does the history match that shape? This is done by multiplying the history by the shape and computing the area.
+
+**Step 3:** Store those numbers. The collection of measurements is the memory. Four shapes give four numbers. Sixty-four shapes give sixty-four numbers.
+
+### Which moments count most
+
+There is one more choice: when measuring the history, does the very beginning count equally with the recent past?
+
+HiPPO's main version (called LegS, for "Legendre Scaled") counts all of history equally. Whether something happened at the very beginning or just now, it gets equal weight in the summary. As time passes, the window simply stretches to always cover everything from start to now.
+
+This equal weighting is what gives HiPPO its special power: it can remember things from very far back just as reliably as recent things. It has no fixed forgetting horizon.
+
+There is also an alternative version (LegT) that only looks at a fixed recent window and forgets everything older. But LegS, with its equal weighting over all history, is the one used in modern models like Mamba.
+
+---
+
+## A complete worked example
+
+Let us make everything concrete with a tiny example using 3 summary numbers: average, trend, and curvature.
+
+Suppose the history so far is a simple ramp: a signal that rises steadily from 0 up to 1. Picture a straight line going up.
 
 We compute the three summary numbers by measuring how much of each shape is present.
 
-**Number 0 — the average (using the flat shape $P_0$):**
-The average value of a ramp that goes evenly from 0 to 1 is simply the midpoint:
-$$\text{average} = \frac{1}{2} = 0.5.$$
-So the first memory number is **0.5**. ✓ (Makes sense — a ramp from 0 to 1 sits at 0.5 on average.)
+**Number 0 (average, using the flat shape P0):**
+The average value of a ramp that goes from 0 to 1 is the midpoint:
 
-**Number 1 — the trend (using the sloped shape $P_1$):**
-A ramp is steadily rising, so it should have a clear positive trend. Working out the measurement gives approximately **0.29**. A positive number confirms: the signal is rising. ✓
+```text
+average = 1/2 = 0.5
+```
 
-**Number 2 — the curve (using the U-shaped $P_2$):**
-A ramp is a perfectly straight line — it has no bend at all. So the curve measurement comes out to **0**. ✓ (No curvature, exactly as expected.)
+The first memory number is **0.5**. This makes sense: a ramp from 0 to 1 sits at 0.5 on average.
+
+**Number 1 (trend, using the sloped shape P1):**
+A ramp is steadily rising, so it should have a clear positive trend. Working out the measurement gives approximately **0.29**. A positive number confirms the signal is rising.
+
+**Number 2 (curvature, using the U-shaped P2):**
+A ramp is a perfectly straight line with no bend. The curvature measurement comes out to exactly **0**. No curvature, exactly as expected.
 
 So the memory is:
-$$\text{memory} = (\,0.5,\ \ 0.29,\ \ 0\,).$$
 
-Read it in plain English: *"On average 0.5, steadily rising, with no bend."* That is a perfect description of a ramp — captured in just three numbers. And from these three numbers, you could redraw the ramp almost exactly.
+```text
+memory = (0.5,  0.29,  0.0)
+```
 
-This is the whole point: **three numbers faithfully summarized the entire history**, because we chose smart reference shapes.
+Read it in plain English: "On average 0.5, steadily rising, with no bend." That is a perfect description of a ramp, captured in just three numbers. From these three numbers you could redraw the ramp almost exactly.
+
+This is the whole point: three numbers faithfully summarized the entire history, because we chose smart reference shapes.
 
 ---
 
-## 8. Updating Memory
+## How the memory updates when new data arrives
 
-Here's the practical magic. When a new data point arrives, HiPPO does **not** re-scan the whole history. It updates the memory with one small calculation.
+Here is the practical magic. When a new data point arrives, HiPPO does **not** re-scan the whole history from the beginning. It updates the memory with one small calculation.
 
-### The update rule in words
+### The update rule
 
-$$\text{new memory} = A \times (\text{old memory}) + B \times (\text{new input})$$
+```text
+new memory = A x (old memory) + B x (new input)
+```
 
-- **Old memory** = the summary numbers you already had.
-- **New input** = the new data point that just arrived.
-- **A** = a fixed grid of numbers (a matrix) that says how the old summary should shift as time moves forward.
-- **B** = a small list of numbers that says how the new input gets blended in.
+Where:
 
-That's it. Multiply the old memory by A, add B times the new input, and you have the updated memory. It's just a bit of arithmetic — fast and constant-sized, no matter how long the history.
+- **old memory** is the summary you already had
+- **new input** is the single data point that just arrived
+- **A** is a fixed matrix that says how the old summary should shift as time moves forward
+- **B** is a small column of numbers that says how the new input gets blended in
 
-### What A and B look like (for our 3-number example)
+That is all. Multiply the old memory by A, add B times the new input, and you have the updated memory. It is a fixed amount of arithmetic, fast and constant regardless of how long the history is.
 
-$$
-A = \begin{pmatrix} 1 & 0 & 0 \\ 1.73 & 2 & 0 \\ 2.24 & 3.87 & 3 \end{pmatrix},
-\qquad
-B = \begin{pmatrix} 1 \\ 1.73 \\ 2.24 \end{pmatrix}
-$$
+### What A and B look like
 
-(Those decimals are square roots: $1.73 \approx \sqrt{3}$, $2.24 \approx \sqrt{5}$, $3.87 \approx \sqrt{15}$. They come from the Legendre shapes.)
+For our 3-number example:
+
+```text
+        [ 1      0      0    ]         [ 1    ]
+A  =    [ 1.73   2      0    ]    B =  [ 1.73 ]
+        [ 2.24   3.87   3    ]         [ 2.24 ]
+```
+
+Those decimals are square roots: 1.73 is roughly sqrt(3), 2.24 is roughly sqrt(5), 3.87 is roughly sqrt(15). They come directly from the mathematical properties of the Legendre shapes.
 
 ### The remarkable fact
 
-Here is what makes HiPPO beautiful, and it's worth stating plainly:
+No one chose the numbers in A and B by hand. They come out automatically from the mathematics, once you decide:
 
-> **Nobody chose the numbers in A and B by hand.** They come out automatically from the math, once you decide (1) to store Legendre-shape summaries and (2) to weight all history equally.
+1. to store Legendre-shape summaries, and
+2. to weight all of history equally.
 
-In most AI models, the numbers inside matrices are learned by trial and error during training. But HiPPO's A and B are **derived** — they are the unique correct answer to the question "how does the summary change as time moves forward?" There is nothing to tune. This is why HiPPO works so well right from the start, before any training.
+In most neural networks, the numbers inside weight matrices are found by trial and error during training (gradient descent). HiPPO's A and B are derived: they are the unique correct answer to the question "how does the summary change as time moves forward?" There is nothing to tune. This is why HiPPO produces excellent results even before any training.
 
-### Notice the triangle shape
+### The triangular shape of A
 
-Look at matrix A: everything **above** the diagonal is zero. This "lower-triangular" shape isn't an accident. It means information flows one way: the coarse summary (average) influences the finer summaries (trend, curve), but not the reverse. Coarse-to-fine, never backward. This falls directly out of the way the Legendre shapes relate to each other.
+Notice that everything above the diagonal in A is zero. This "lower-triangular" shape is not an accident. It means information flows one way: the coarse summary (average) influences the finer summaries (trend, curvature), but not the reverse. Coarse-to-fine, never backward. This falls directly out of the way Legendre shapes relate to each other.
 
 ---
 
-## 9. Why Memory Never Blows Up
+## Watching the memory update over time
 
-There's a danger with any repeated calculation: if you multiply by something over and over, the result might explode to infinity (or shrink to nothing). Since HiPPO applies matrix A once per data point — thousands of times for a long sequence — we need to be sure the memory stays sensible.
+The image below shows what happens when HiPPO reads a moderately complex signal over many time steps. The three memory coefficients (average, trend, curvature) evolve smoothly as new data arrives.
 
-### The key idea: eigenvalues
+![HiPPO memory coefficients evolving as new data arrives](figures/3_memory_evolution.png)
 
-Every matrix has special numbers attached to it called **eigenvalues**. Here's what they mean in plain terms:
+Each line is one memory slot. Notice how:
 
-> An eigenvalue tells you the "stretch factor" of the matrix in a certain direction. If you apply the matrix over and over, the result grows or shrinks according to that stretch factor.
+- The average (blue) is the most stable, reacting slowly to new information.
+- The trend (orange) responds more quickly.
+- The curvature (green) is the most reactive, capturing moment-to-moment changes.
 
-The rule for a repeated process like ours:
-- If the stretch factor is **bigger than 1** in size → the memory **explodes** to infinity. Bad.
-- If the stretch factor is **less than 1** in size → the memory **fades** toward zero in a controlled way. Good and stable.
+This makes intuitive sense: coarser summaries are stabler; finer summaries are more sensitive.
 
-(For the continuous-time math HiPPO actually uses, the exact condition is that the eigenvalues should be **negative** — but the spirit is the same: they must point toward "shrink," not "grow.")
+---
+
+## How well does the summary reconstruct the original?
+
+The image below shows the result of using HiPPO to summarize a signal, then reconstructing it from the stored coefficients.
+
+![HiPPO reconstruction of a signal using 16 Legendre coefficients](figures/2_hippo_reconstruction.png)
+
+The original signal is shown in one colour; the reconstruction from the stored coefficients is shown in another. With just 16 summary numbers, the reconstruction closely follows the original, including the general shape, major features, and approximate timing of changes. Fine-grained noise is smoothed out, but the essential information is preserved.
+
+This is the payoff of the whole approach: a compact, fixed-size memory that keeps the important structure of a long history.
+
+---
+
+## Why the memory never explodes
+
+There is a practical danger with any repeated calculation. If you multiply by something over and over, the result might grow to infinity. Since HiPPO applies matrix A once per data point, potentially thousands of times for a long sequence, we need to be sure the memory stays within reasonable bounds.
+
+### Eigenvalues
+
+Every matrix has special numbers attached to it called eigenvalues. In plain terms, an eigenvalue tells you the "stretch factor" of the matrix in a particular direction. If you apply the matrix repeatedly:
+
+- a stretch factor larger than 1 means the memory explodes. Bad.
+- a stretch factor smaller than 1 means the memory fades in a controlled way. Good.
+
+In the continuous-time version of the math HiPPO actually uses, the condition is that eigenvalues must be negative (pointing toward "shrink," not "grow").
 
 ### HiPPO is stable by design
 
-For our example matrix A, the eigenvalues turn out to be exactly the numbers on the diagonal: **1, 2, 3** — and in the actual HiPPO equation these enter with a minus sign, making them **−1, −2, −3**. All negative. Every direction shrinks in a controlled way. The memory can never explode, no matter how long the sequence.
+For our example matrix A, the eigenvalues are exactly the numbers on the diagonal: 1, 2, 3. In the actual HiPPO equation these appear with a minus sign, becoming -1, -2, -3. All negative. Every direction shrinks in a controlled way. The memory cannot explode no matter how long the sequence.
 
-This isn't luck. The lower-triangular shape of A (Section 8) makes the eigenvalues easy to read (they're just the diagonal), and the way HiPPO is built guarantees they're all negative. **Stability is baked in.**
+This is not luck. The lower-triangular shape of A makes the eigenvalues easy to read (they sit on the diagonal), and the way HiPPO is constructed guarantees they are all negative. Stability is built in from the start.
 
 ---
 
-## 10. Where HiPPO Fits
+## Where HiPPO fits: the road to Mamba
 
 HiPPO by itself is a theory of memory. Two famous models build on it.
 
-**S4** (2021) took HiPPO and made it *fast*. The challenge was that computing with matrix A repeatedly can be slow. S4 found a clever way to reorganize A so the computation runs quickly even on very long sequences (16,000+ steps). S4 kept HiPPO's excellent memory, added speed.
+### S4 (2021)
 
-**Mamba** (2023) added one crucial upgrade: **selectivity**.
+S4 took HiPPO and made it fast. The challenge was that applying matrix A repeatedly can be slow for very long sequences. S4 found a clever way to reorganize A so the computation runs quickly even at 16,000 or more time steps. S4 kept HiPPO's excellent memory and added speed.
 
-In plain HiPPO, the matrices A, B (and a step-size setting) are the *same for every input*. The word "the" is processed exactly like the word "explosion." That's wasteful — some words matter far more than others.
+### Mamba (2023)
 
-Mamba makes B and the step-size **depend on the input word itself**. Now:
-- an important, rare word → gets written into memory strongly, and lingers,
-- a common filler word → barely touches the memory.
+Mamba added one crucial upgrade: selectivity.
 
-The model *learns to decide what to remember*. This is what makes Mamba competitive with (and sometimes better than) GPT-style models, while using far less memory on long texts.
+In plain HiPPO, the matrices A and B are the same for every input token. The word "the" is processed exactly like the word "earthquake." That is wasteful: some words matter far more than others.
+
+Mamba makes B and the step size **depend on the input token itself**:
+
+- an important, rare word gets written into memory strongly and lingers,
+- a common filler word barely touches the memory.
+
+The model learns to decide what to remember. This is what makes Mamba competitive with GPT-style attention models while using far less memory on long texts.
 
 The one-line summary of the whole journey:
 
-> **HiPPO decides what the memory should be. S4 makes it fast. Mamba makes it smart about what to keep.**
+```text
+HiPPO decides what the memory should be.
+S4    makes it fast.
+Mamba makes it smart about what to keep.
+```
 
 ---
 
-## 11. Quick Reference
-
-**The five ideas to remember:**
+## Summary: five ideas to remember
 
 1. **The problem:** summarize an ever-growing history into a fixed, small set of numbers.
-2. **The trick:** store the *shape* of the history (average, trend, curve, wiggle...) instead of raw data.
-3. **The shapes:** Legendre polynomials — a standard set of independent reference shapes, built by cleaning up the simple powers $1, x, x^2, x^3, \dots$
-4. **The update:** new memory $= A \times$ old memory $+ B \times$ new input. The matrices A and B are *derived from the math*, not tuned.
+
+2. **The trick:** store the shape of the history (average, trend, curve, wiggle...) instead of the raw data.
+
+3. **The shapes:** Legendre polynomials, a standard set of independent reference shapes built by cleaning the simple powers 1, x, x^2, x^3, ...
+
+4. **The update:** new memory = A x old memory + B x new input. The matrices A and B are derived from the mathematics, not tuned by hand.
+
 5. **The stability:** A's eigenvalues are all negative, so the memory fades gracefully and never explodes.
-
-**What each memory number means (with 4 shapes):**
-
-| Memory slot | Reference shape | Captures |
-|-------------|-----------------|----------|
-| 1st | flat line | average level |
-| 2nd | slope | trend (rising/falling) |
-| 3rd | U-curve | curvature |
-| 4th | S-wiggle | finer oscillation |
-
-**Further reading (from gentle to advanced):**
-
-- **A Visual Guide to Mamba and State Space Models** by Maarten Grootendorst (blog) — lots of pictures, very beginner-friendly. Start here.
-- **The Annotated S4** by Sasha Rush and Sidd Karamcheti (blog) — walks through real code line by line.
-- **HiPPO: Recurrent Memory with Optimal Polynomial Projections** by Gu, Dao, Ermon, Rudra, and Ré (2020), the original research paper (arXiv:2008.07669) — for when you want the full mathematics.
-- **Mamba: Linear-Time Sequence Modeling with Selective State Spaces** by Gu and Dao (2023), arXiv:2312.00752 — the model built on HiPPO.
-
-**A note on the math:** This guide kept things intuitive. If you'd like the full rigorous derivation — with the calculus that produces A and B, the exact integrals, and formal proofs — that lives in the companion document written at a more advanced level. Everything here is a faithful, simplified picture of that same mathematics.
 
 ---
 
-*You now understand HiPPO: what problem it solves, how it summarizes history using reference shapes, how it updates its memory with a simple rule, and why that memory stays stable. That's the foundation beneath some of the most capable AI models today.*
+## What each memory slot means
+
+| Memory slot | Reference shape | What it captures |
+| --- | --- | --- |
+| 1st | flat horizontal line | average level |
+| 2nd | straight slope | trend (rising or falling) |
+| 3rd | U-shaped curve | curvature |
+| 4th | S-shaped wiggle | finer oscillation |
+
+---
+
+## Further reading
+
+Start here and go as deep as you want:
+
+- **A Visual Guide to Mamba and State Space Models** by Maarten Grootendorst (blog post): lots of pictures, very approachable. Start here.
+- **The Annotated S4** by Sasha Rush and Sidd Karamcheti (blog post): walks through real code line by line. Good second step.
+- **HiPPO: Recurrent Memory with Optimal Polynomial Projections** by Gu, Dao, Ermon, Rudra, and Re (2020), arXiv 2008.07669: the original research paper. For when you want the full mathematics.
+- **Mamba: Linear-Time Sequence Modeling with Selective State Spaces** by Gu and Dao (2023), arXiv 2312.00752: the model that brought HiPPO into production.
+
+---
+
+This guide kept things intuitive. The full rigorous derivation, including the calculus that produces A and B, the exact integrals, and formal proofs, lives in the companion document `HiPPO_SSM_explained.md` in this folder. Everything here is a faithful, simplified picture of the same mathematics.

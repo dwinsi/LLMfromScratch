@@ -1,776 +1,910 @@
-# Legendre Polynomials — A Complete Derivation from First Principles
+# Legendre Polynomials: A Complete Guide from First Principles
 
-*Every major property derived and worked out, with full integration and differentiation. Math background needed: calculus (derivatives, integrals, integration by parts) and basic algebra.*
+This document builds the Legendre polynomials from scratch, four different ways. Every formula is introduced with a plain-English explanation before any symbols appear. Every integral is carried through step by step.
+
+**What you need:** basic algebra and a willingness to follow integrals and derivatives. Anything more advanced is explained as it arrives.
+
+**What you will understand by the end:** why the Legendre polynomials are the unique natural answer to the question "what are the simplest orthogonal shapes on an interval?", and exactly why they are the mathematical backbone of the HiPPO memory mechanism used in models like Mamba.
 
 ---
 
 ## Table of Contents
 
-1. [Introduction: what are they and why do they matter](#1-introduction)
-2. [Prerequisite ideas: inner products and orthogonality of functions](#2-prerequisite-ideas)
-3. [Derivation 1 — Gram–Schmidt from the monomials](#3-derivation-1-gramschmidt)
-4. [Derivation 2 — Rodrigues' formula](#4-derivation-2-rodrigues-formula)
-5. [Derivation 3 — the generating function](#5-derivation-3-the-generating-function)
-6. [Derivation 4 — Legendre's differential equation](#6-derivation-4-legendres-differential-equation)
-7. [The orthogonality property — full proof](#7-the-orthogonality-property)
-8. [The normalization constant — computing the integral](#8-the-normalization-constant)
-9. [Recurrence relations (with derivation)](#9-recurrence-relations)
+1. [What they are and why they matter](#1-what-they-are-and-why-they-matter)
+2. [Prerequisite ideas: inner products and orthogonality](#2-prerequisite-ideas)
+3. [Derivation 1: Gram-Schmidt from the powers](#3-derivation-1-gram-schmidt)
+4. [Derivation 2: Rodrigues formula](#4-derivation-2-rodrigues-formula)
+5. [Derivation 3: the generating function](#5-derivation-3-the-generating-function)
+6. [Derivation 4: Legendre's differential equation](#6-derivation-4-legendres-differential-equation)
+7. [The orthogonality property with full proof](#7-the-orthogonality-property)
+8. [The normalization constant](#8-the-normalization-constant)
+9. [Recurrence relations](#9-recurrence-relations)
 10. [Derivative identities](#10-derivative-identities)
 11. [Special values and symmetry](#11-special-values-and-symmetry)
 12. [Worked examples and numerical checks](#12-worked-examples)
-13. [Why they appear in HiPPO and physics](#13-why-they-appear)
+13. [Why they appear in HiPPO and physics](#13-why-they-appear-in-hippo-and-physics)
 14. [Summary table and references](#14-summary-table-and-references)
 
 ---
 
-## 1. Introduction
+## 1. What they are and why they matter
 
-The **Legendre polynomials** $P_0, P_1, P_2, \dots$ are a specific sequence of polynomials that show up everywhere: in physics (the potential of a sphere, the hydrogen atom), in numerical methods (Gaussian quadrature), in statistics, and — recently — in machine learning, as the mathematical backbone of the HiPPO memory mechanism used in models like Mamba.
+The Legendre polynomials are a specific sequence of shapes, named P0, P1, P2, P3, and so on. Here are the first six:
 
-Here are the first few:
-
-$$
-\begin{aligned}
-P_0(x) &= 1 \\
-P_1(x) &= x \\
-P_2(x) &= \tfrac{1}{2}(3x^2 - 1) \\
-P_3(x) &= \tfrac{1}{2}(5x^3 - 3x) \\
-P_4(x) &= \tfrac{1}{8}(35x^4 - 30x^2 + 3) \\
-P_5(x) &= \tfrac{1}{8}(63x^5 - 70x^3 + 15x)
-\end{aligned}
-$$
-
-They are defined on the interval $[-1, 1]$. What makes them special is a property called **orthogonality**, which we will define and prove. Intuitively, each one captures a distinct "shape" — $P_0$ is flat, $P_1$ is a slope, $P_2$ is a U-curve, $P_3$ is an S-wiggle, and so on, each wigglier than the last.
-
-The plot below shows the first four on $[-1, 1]$. Notice how each successive polynomial crosses zero one more time than the last ($P_n$ has exactly $n$ roots) — that is the "one shape wigglier" pattern made precise:
-
-<svg viewBox="0 0 520 300" xmlns="http://www.w3.org/2000/svg" style="max-width:520px;width:100%;background:#fafafa;border-radius:8px;">
-  <!-- axes -->
-  <line x1="40" y1="150" x2="500" y2="150" stroke="#999" stroke-width="1"/>
-  <line x1="270" y1="20" x2="270" y2="280" stroke="#999" stroke-width="1"/>
-  <!-- axis labels -->
-  <text x="505" y="154" font-size="12" fill="#666">x</text>
-  <text x="45" y="30" font-size="12" fill="#666">P(x)</text>
-  <text x="42" y="145" font-size="11" fill="#999">1</text>
-  <text x="36" y="270" font-size="11" fill="#999">-1</text>
-  <text x="44" y="163" font-size="11" fill="#999">-1</text>
-  <text x="495" y="163" font-size="11" fill="#999">1</text>
-  <!-- gridlines at y=+1 and y=-1 -->
-  <line x1="40" y1="40" x2="500" y2="40" stroke="#e0e0e0" stroke-width="1" stroke-dasharray="3 3"/>
-  <line x1="40" y1="260" x2="500" y2="260" stroke="#e0e0e0" stroke-width="1" stroke-dasharray="3 3"/>
-  <!-- P0 = 1 (flat line at y=1 -> screen y=40) -->
-  <line x1="40" y1="40" x2="500" y2="40" stroke="#7F77DD" stroke-width="2.5"/>
-  <text x="450" y="34" font-size="13" fill="#7F77DD" font-weight="bold">P₀</text>
-  <!-- P1 = x (line from (-1,-1) to (1,1)) : screen (40,260) to (500,40) -->
-  <line x1="40" y1="260" x2="500" y2="40" stroke="#1D9E75" stroke-width="2.5"/>
-  <text x="480" y="60" font-size="13" fill="#1D9E75" font-weight="bold">P₁</text>
-  <!-- P2 = 0.5(3x^2-1): U-curve. Points computed and mapped. -->
-  <polyline fill="none" stroke="#BA7517" stroke-width="2.5" points="40,40 86,97 132,140 178,169 224,183 270,183 316,169 362,140 408,97 454,40 500,40"/>
-  <text x="255" y="200" font-size="13" fill="#BA7517" font-weight="bold">P₂</text>
-  <!-- P3 = 0.5(5x^3-3x): S-curve -->
-  <polyline fill="none" stroke="#D85A30" stroke-width="2.5" points="40,260 86,180 132,132 178,113 224,120 270,150 316,180 362,187 408,168 454,120 500,40"/>
-  <text x="150" y="105" font-size="13" fill="#D85A30" font-weight="bold">P₃</text>
-</svg>
-
-$P_0$ (purple) is flat, $P_1$ (green) is a straight slope, $P_2$ (gold) dips into a U, and $P_3$ (orange) swings through an S. Every one hits $+1$ at $x = 1$ — the defining normalization.
-
-This document derives them four independent ways, proves their core properties with full calculus, and works out every integral and derivative explicitly. Any one derivation is enough to define them; seeing all four shows why they are so natural.
-
-### The shape of this document
-
-The four derivations all lead to the same polynomials, which then have a set of shared properties. This map shows how everything connects:
-
-```mermaid
-flowchart TD
-    START["Powers: 1, x, x², x³, ..."]
-
-    START --> GS["Derivation 1<br/>Gram–Schmidt<br/>(orthogonalize)"]
-    START --> ROD["Derivation 2<br/>Rodrigues' formula"]
-    START --> GEN["Derivation 3<br/>Generating function"]
-    START --> ODE["Derivation 4<br/>Differential equation"]
-
-    GS --> LP(["Legendre Polynomials<br/>P₀, P₁, P₂, P₃, ..."])
-    ROD --> LP
-    GEN --> LP
-    ODE --> LP
-
-    LP --> ORTH["Orthogonality<br/>∫ PₙPₘ = 0"]
-    LP --> NORM["Norm<br/>∫ Pₙ² = 2/(2n+1)"]
-    LP --> REC["Recurrence<br/>(n+1)Pₙ₊₁ = (2n+1)xPₙ − nPₙ₋₁"]
-    LP --> DER["Derivative identities"]
-
-    ORTH --> APP["Applications:<br/>HiPPO memory · physics · quadrature"]
-    NORM --> APP
-    REC --> APP
-    DER --> APP
-
-    style LP fill:#EEEDFE,stroke:#7F77DD,stroke-width:2px,color:#3C3489
-    style APP fill:#E1F5EE,stroke:#1D9E75,color:#085041
-    style START fill:#FAEEDA,stroke:#BA7517,color:#633806
+```text
+P0(x) = 1
+P1(x) = x
+P2(x) = (1/2)(3x^2 - 1)
+P3(x) = (1/2)(5x^3 - 3x)
+P4(x) = (1/8)(35x^4 - 30x^2 + 3)
+P5(x) = (1/8)(63x^5 - 70x^3 + 15x)
 ```
+
+They live on the interval from x = -1 to x = 1. What makes them special is a property called **orthogonality**: each polynomial is completely independent of all the others. If you multiply any two distinct Legendre polynomials together and compute the area under the curve over `[-1, 1]`, the result is exactly zero. This independence means each polynomial captures a genuinely different aspect of a signal.
+
+In plain terms:
+
+- P0 is a flat horizontal line. It captures the average level.
+- P1 is a straight slope. It captures the trend (rising or falling).
+- P2 is a U-curve. It captures curvature.
+- P3 is an S-wiggle. It captures finer oscillation.
+- Each subsequent polynomial adds one more "wiggle", capturing progressively finer detail.
+
+The plot below shows the first four:
+
+![The first four Legendre polynomials plotted from x = -1 to x = 1](figures/1_legendre_polynomials.png)
+
+Notice that each polynomial Pn crosses zero exactly n times. P0 never crosses zero, P1 crosses once, P2 twice, P3 three times. This "one more crossing each time" is the visual signature of the increasing oscillation.
+
+### Where they show up
+
+Legendre polynomials appear throughout mathematics and physics:
+
+- In the **potential of a charged sphere**: if you expand the electric potential around a sphere, Legendre polynomials appear as the natural basis.
+- In the **hydrogen atom**: the angular part of the wavefunction is built from Legendre polynomials.
+- In **numerical integration**: Gaussian quadrature, the most accurate method for integrating smooth functions, is based on them.
+- In **machine learning**: the HiPPO memory mechanism, which underlies the Mamba architecture, uses them as its reference shapes for compressing sequences.
+
+### The four derivations
+
+This document derives the Legendre polynomials four independent ways. Each derivation starts from a different angle and arrives at the same sequence. This is not redundancy: seeing four paths reveals why the polynomials are so natural. The four derivations are:
+
+1. Gram-Schmidt: start with simple powers, make them mutually orthogonal.
+2. Rodrigues formula: one closed-form expression generates all of them.
+3. Generating function: they are the coefficients in a specific power series.
+4. Differential equation: they are the well-behaved solutions of a particular ODE.
+
+All four arrive at the same P0, P1, P2, P3, ... and all four share the same properties: orthogonality, a normalization constant of `2/(2n+1)`, a three-term recurrence, and derivative identities. Those shared properties are derived in Sections 7 through 11.
 
 ---
 
 ## 2. Prerequisite Ideas
 
-Before deriving anything, we need two ideas: the **inner product of functions**, and **orthogonality**.
+Before deriving anything, we need two ideas: the **inner product of functions**, and what it means for two functions to be **orthogonal**.
 
 ### 2.1 From dot products to inner products
 
-You know the dot product of two vectors. For $\mathbf{a} = (a_1, a_2, a_3)$ and $\mathbf{b} = (b_1, b_2, b_3)$:
+You know the dot product of two vectors. For 3D vectors a = (a1, a2, a3) and b = (b1, b2, b3):
 
-$$
-\mathbf{a} \cdot \mathbf{b} = a_1 b_1 + a_2 b_2 + a_3 b_3 = \sum_i a_i b_i.
-$$
+```text
+a . b = a1*b1 + a2*b2 + a3*b3
+```
 
-Two vectors are **perpendicular** (orthogonal) when their dot product is zero.
+Two vectors are perpendicular (orthogonal) when their dot product is zero. They "point in completely different directions" and share no common component.
 
-Now here is the key leap. A function is like a vector with infinitely many components — one value $f(x)$ for each point $x$. To take a "dot product" of two functions, we replace the sum over components by an **integral** over the values:
+Now here is the key step. A function is like a vector with infinitely many components: one value `f(x)` for each point x on the interval. The "dot product" of two functions replaces the sum over components with an integral over the interval:
 
-$$
-\langle f, g \rangle = \int_{-1}^{1} f(x)\, g(x)\, dx.
-$$
+```text
+inner product of f and g = integral from -1 to 1 of:  f(x) * g(x)  dx
+```
 
-This is called the **inner product** of $f$ and $g$ on the interval $[-1, 1]$. It measures how much the two functions "line up" — how much they point in the same direction, in the same way the dot product does for vectors.
+This integral is called the **inner product** of f and g on `[-1, 1]`. It measures how much the two functions "line up", exactly as the dot product measures alignment of vectors. We write it as `<f, g>`.
 
 ### 2.2 Orthogonality of functions
 
-Two functions are **orthogonal** on $[-1, 1]$ if their inner product is zero:
+Two functions are **orthogonal** on `[-1, 1]` if their inner product is zero:
 
-$$
-\langle f, g \rangle = \int_{-1}^{1} f(x)\, g(x)\, dx = 0.
-$$
+```text
+<f, g> = integral from -1 to 1 of:  f(x) * g(x)  dx  =  0
+```
 
-This means: where one function is positive and the other negative, the product is negative; where they share signs, the product is positive; and overall these cancel out to zero net area. The functions are "independent" — neither contains any component of the other.
+What does this mean in pictures? Where one function is positive and the other is negative, their product is negative. Where they share the same sign, the product is positive. Orthogonality means these positive and negative contributions exactly cancel out to zero net area.
 
-**Example.** Are $f(x) = 1$ and $g(x) = x$ orthogonal on $[-1,1]$?
-$$
-\int_{-1}^{1} 1 \cdot x \, dx = \left[\frac{x^2}{2}\right]_{-1}^{1} = \frac{1}{2} - \frac{1}{2} = 0. \quad \checkmark
-$$
-Yes. The area under $x$ from $-1$ to $1$ cancels (negative half balances positive half).
+**Example: are f(x) = 1 and g(x) = x orthogonal on [-1, 1]?**
+
+```text
+integral from -1 to 1 of:  1 * x  dx
+
+= [x^2 / 2] from -1 to 1
+
+= (1/2) - (1/2) = 0
+```
+
+Yes, they are orthogonal. The area under x from -1 to 0 is negative and equals exactly the positive area from 0 to 1.
 
 ### 2.3 The norm of a function
 
-The "length" (norm) of a function is the square root of its inner product with itself, exactly like the length of a vector is $\sqrt{\mathbf{a}\cdot\mathbf{a}}$:
+The "length" (norm) of a function is the square root of its inner product with itself, exactly as the length of a vector is `sqrt(a . a)`:
 
-$$
-\|f\| = \sqrt{\langle f, f\rangle} = \sqrt{\int_{-1}^{1} f(x)^2\, dx}.
-$$
-
-**Example.** The norm of $f(x) = 1$:
-$$
-\|1\|^2 = \int_{-1}^{1} 1\, dx = 2, \quad\text{so}\quad \|1\| = \sqrt{2}.
-$$
-
-These three ideas — inner product, orthogonality, norm — are all we need.
-
----
-
-## 3. Derivation 1 — Gram–Schmidt
-
-The most hands-on way to build the Legendre polynomials is to take the simple powers $1, x, x^2, x^3, \dots$ and make them mutually orthogonal, one at a time. This procedure is called **Gram–Schmidt orthogonalization**.
-
-The recipe for each new polynomial: take the next power, then subtract off its overlap with every polynomial already built.
-
-```mermaid
-flowchart LR
-    A["Take next<br/>power xⁿ"] --> B{"Overlap with<br/>any previous<br/>Pₖ?"}
-    B -->|"yes"| C["Subtract<br/>⟨xⁿ,Pₖ⟩/⟨Pₖ,Pₖ⟩ · Pₖ"]
-    C --> B
-    B -->|"no overlap<br/>left"| D["Rescale so<br/>Pₙ(1) = 1"]
-    D --> E(["Pₙ"])
-    E --> A
-
-    style E fill:#EEEDFE,stroke:#7F77DD,color:#3C3489
-    style C fill:#FAECE7,stroke:#D85A30,color:#712B13
+```text
+norm of f = sqrt(<f, f>) = sqrt( integral from -1 to 1 of:  f(x)^2  dx )
 ```
 
-The formula for subtracting overlap: the component of a function $v$ along an already-orthogonal function $p$ is
-$$
-\frac{\langle v, p\rangle}{\langle p, p\rangle}\, p.
-$$
-(Compare with vectors: the component of $\mathbf{v}$ along $\mathbf{p}$ is $\frac{\mathbf{v}\cdot\mathbf{p}}{\mathbf{p}\cdot\mathbf{p}}\mathbf{p}$. Identical idea.)
+**Example: the norm of f(x) = 1:**
 
-### 3.1 Building $P_0$
+```text
+norm^2 = integral from -1 to 1 of:  1  dx = 2
 
-Take the first power, $x^0 = 1$. There's nothing before it to be orthogonal to. So:
-$$
-p_0(x) = 1.
-$$
+norm = sqrt(2)
+```
 
-### 3.2 Building $P_1$
-
-Take the next power, $x$. Subtract its overlap with $p_0$:
-$$
-p_1(x) = x - \frac{\langle x, 1\rangle}{\langle 1, 1\rangle}\cdot 1.
-$$
-
-Compute the pieces:
-$$
-\langle x, 1\rangle = \int_{-1}^{1} x\, dx = 0, \qquad \langle 1,1\rangle = \int_{-1}^{1} 1\, dx = 2.
-$$
-
-So the overlap is $\frac{0}{2} = 0$, and:
-$$
-p_1(x) = x - 0 = x.
-$$
-
-### 3.3 Building $P_2$
-
-Take $x^2$. Subtract overlaps with both $p_0 = 1$ and $p_1 = x$:
-$$
-p_2(x) = x^2 - \frac{\langle x^2, 1\rangle}{\langle 1,1\rangle}\cdot 1 - \frac{\langle x^2, x\rangle}{\langle x, x\rangle}\cdot x.
-$$
-
-Compute each integral:
-$$
-\langle x^2, 1\rangle = \int_{-1}^{1} x^2\, dx = \left[\frac{x^3}{3}\right]_{-1}^{1} = \frac{1}{3} - \left(-\frac{1}{3}\right) = \frac{2}{3},
-$$
-$$
-\langle x^2, x\rangle = \int_{-1}^{1} x^3\, dx = 0 \quad\text{(odd function, cancels)},
-$$
-$$
-\langle x, x\rangle = \int_{-1}^{1} x^2\, dx = \frac{2}{3}.
-$$
-
-Substitute:
-$$
-p_2(x) = x^2 - \frac{2/3}{2}\cdot 1 - \frac{0}{2/3}\cdot x = x^2 - \frac{1}{3}.
-$$
-
-### 3.4 Building $P_3$
-
-Take $x^3$. Subtract overlaps with $p_0, p_1, p_2$:
-$$
-\langle x^3, 1\rangle = \int_{-1}^1 x^3\,dx = 0,
-$$
-$$
-\langle x^3, x\rangle = \int_{-1}^1 x^4\,dx = \left[\frac{x^5}{5}\right]_{-1}^1 = \frac{2}{5},
-$$
-$$
-\langle x^3, x^2 - \tfrac13\rangle = \int_{-1}^1 x^3\left(x^2 - \tfrac13\right)dx = \int_{-1}^1 \left(x^5 - \tfrac13 x^3\right)dx = 0.
-$$
-$$
-\langle x, x\rangle = \frac{2}{3} \quad\text{(from before)}.
-$$
-
-So:
-$$
-p_3(x) = x^3 - 0 - \frac{2/5}{2/3}\, x - 0 = x^3 - \frac{3}{5}x.
-$$
-
-### 3.5 Normalizing to the standard convention
-
-The polynomials $p_0 = 1$, $p_1 = x$, $p_2 = x^2 - \tfrac13$, $p_3 = x^3 - \tfrac35 x$ are already orthogonal. But the standard **Legendre convention** rescales each so that its value at $x = 1$ equals $1$:
-$$
-P_n(1) = 1.
-$$
-
-Apply this:
-
-- $p_0(1) = 1$, already fine. $P_0 = 1$.
-- $p_1(1) = 1$, already fine. $P_1 = x$.
-- $p_2(1) = 1 - \tfrac13 = \tfrac23$; multiply by $\tfrac32$: $P_2 = \tfrac32 x^2 - \tfrac12 = \tfrac12(3x^2 - 1)$.
-- $p_3(1) = 1 - \tfrac35 = \tfrac25$; multiply by $\tfrac52$: $P_3 = \tfrac52 x^3 - \tfrac32 x = \tfrac12(5x^3 - 3x)$.
-
-These match the standard forms exactly. **We have derived the Legendre polynomials from nothing but the powers of $x$ and the orthogonality condition.**
+These three ideas, inner product, orthogonality, and norm, are all we need to proceed.
 
 ---
 
-## 4. Derivation 2 — Rodrigues' Formula
+## 3. Derivation 1: Gram-Schmidt
 
-There is a beautiful closed-form expression that generates every Legendre polynomial at once, called **Rodrigues' formula**:
+The most hands-on way to build the Legendre polynomials is to start with the simple powers `1, x, x^2, x^3, ...` and make them mutually orthogonal, one at a time. This procedure is called **Gram-Schmidt orthogonalization**.
 
-$$
-\boxed{\,P_n(x) = \frac{1}{2^n\, n!}\,\frac{d^n}{dx^n}\left[(x^2 - 1)^n\right].\,}
-$$
+The idea: take each new power of x, then subtract off its overlap with every polynomial already built. What remains is orthogonal to all the previous ones.
 
-In words: take $(x^2 - 1)$, raise it to the $n$-th power, differentiate $n$ times, and divide by $2^n n!$.
+The overlap of a function v with an already-orthogonal function p is measured by:
 
-### 4.1 Verifying it for small $n$
+```text
+overlap amount = <v, p> / <p, p>
+```
 
-**Case $n = 0$:** $(x^2-1)^0 = 1$; the 0th derivative is $1$; divide by $2^0 \cdot 0! = 1$. Result: $P_0 = 1$. ✓
+This is the same idea as projecting one vector onto another: the component of v in the direction of p. Subtracting `(overlap amount) * p` from v removes that component.
 
-**Case $n = 1$:** $(x^2 - 1)^1 = x^2 - 1$; first derivative is $2x$; divide by $2^1 \cdot 1! = 2$. Result: $P_1 = x$. ✓
+The process in plain English:
 
-**Case $n = 2$:** $(x^2 - 1)^2 = x^4 - 2x^2 + 1$.
+```text
+1. Take next power x^n
+2. Compute its inner product with each previous polynomial
+3. Subtract off each overlap
+4. Rescale so the value at x = 1 equals 1
+5. The result is the next Legendre polynomial
+```
 
-- First derivative: $4x^3 - 4x$.
-- Second derivative: $12x^2 - 4$.
-- Divide by $2^2 \cdot 2! = 8$: $\frac{12x^2 - 4}{8} = \frac{3x^2 - 1}{2} = \tfrac12(3x^2 - 1) = P_2$. ✓
+### Building P0
 
-**Case $n = 3$:** $(x^2 - 1)^3 = x^6 - 3x^4 + 3x^2 - 1$.
+Take the first power, `x^0 = 1`. There is nothing before it. Set `p0 = 1`.
 
-- First derivative: $6x^5 - 12x^3 + 6x$.
-- Second derivative: $30x^4 - 36x^2 + 6$.
-- Third derivative: $120x^3 - 72x$.
-- Divide by $2^3 \cdot 3! = 48$: $\frac{120x^3 - 72x}{48} = \frac{5x^3 - 3x}{2} = P_3$. ✓
+### Building P1
 
-### 4.2 Why Rodrigues' formula produces orthogonal polynomials
+Take the next power, `x`. Subtract its overlap with `p0 = 1`.
 
-Here is the elegant reason the formula works — and it uses **integration by parts**, repeatedly.
+The overlap is `<x, 1> / <1, 1>`:
 
-We want to show $\langle P_m, P_n \rangle = 0$ when $m < n$. Ignoring constant factors, this means showing
-$$
-\int_{-1}^{1} x^m \cdot \frac{d^n}{dx^n}\left[(x^2-1)^n\right]\, dx = 0 \quad\text{for } m < n.
-$$
-(It's enough to check against $x^m$ for all $m < n$, since any lower-degree polynomial is a combination of such powers.)
+```text
+<x, 1> = integral from -1 to 1 of:  x * 1  dx = 0    (x is odd, cancels)
 
-Apply integration by parts. The function $(x^2 - 1)^n$ and its first $n-1$ derivatives all **vanish at $x = \pm 1$**, because $(x^2 - 1) = (x-1)(x+1)$ has double-and-higher roots there. This kills every boundary term. Each integration by parts moves one derivative off the $(x^2-1)^n$ factor and onto the $x^m$ factor, picking up a minus sign:
+<1, 1> = integral from -1 to 1 of:  1  dx = 2
 
-$$
-\int_{-1}^1 x^m \frac{d^n}{dx^n}\big[(x^2-1)^n\big]dx
-= (-1)^n \int_{-1}^1 \frac{d^n}{dx^n}\big[x^m\big]\cdot (x^2-1)^n \, dx.
-$$
+overlap = 0 / 2 = 0
+```
 
-But if $m < n$, then differentiating $x^m$ a total of $n$ times gives **zero** (you differentiate a degree-$m$ polynomial more times than its degree). Hence the whole integral is zero. **Orthogonality proved.** The genius of Rodrigues' formula is that the repeated derivative of $(x^2-1)^n$ automatically bakes in orthogonality to all lower degrees.
+The overlap is zero. `x` is already orthogonal to `1`. So `p1 = x`.
+
+### Building P2
+
+Take `x^2`. Subtract its overlap with both p0 and p1.
+
+**Overlap with p0 = 1:**
+
+```text
+<x^2, 1> = integral from -1 to 1 of:  x^2  dx = [x^3/3] from -1 to 1 = 1/3 - (-1/3) = 2/3
+
+<1, 1> = 2
+
+overlap with p0 = (2/3) / 2 = 1/3
+```
+
+**Overlap with p1 = x:**
+
+```text
+<x^2, x> = integral from -1 to 1 of:  x^3  dx = 0    (odd function)
+
+overlap with p1 = 0
+```
+
+Subtract:
+
+```text
+p2 = x^2  -  (1/3)*1  -  0  =  x^2 - 1/3
+```
+
+Check: this is orthogonal to both `1` and `x` on `[-1, 1]`. Good.
+
+**Rescale so p2(1) = 1.** At x = 1: `1 - 1/3 = 2/3`. Multiply by `3/2`:
+
+```text
+P2 = (3/2)(x^2 - 1/3) = (1/2)(3x^2 - 1)
+```
+
+### Building P3
+
+Take `x^3`. Check overlaps:
+
+```text
+<x^3, 1> = 0                   (x^3 is odd)
+<x^3, x> = integral of x^4 from -1 to 1 = 2/5
+
+overlap with p1 = (2/5) / (2/3) = 3/5
+
+<x^3, x^2 - 1/3> = integral of (x^5 - x^3/3) from -1 to 1 = 0    (both odd)
+```
+
+Subtract:
+
+```text
+p3 = x^3  -  0  -  (3/5)*x  -  0  =  x^3 - (3/5)x
+```
+
+**Rescale so p3(1) = 1.** At x = 1: `1 - 3/5 = 2/5`. Multiply by `5/2`:
+
+```text
+P3 = (5/2)(x^3 - 3x/5) = (1/2)(5x^3 - 3x)
+```
+
+### The result
+
+Starting from nothing but the powers `1, x, x^2, x^3, ...` and the condition of mutual orthogonality on `[-1, 1]`, we derived:
+
+```text
+P0 = 1
+P1 = x
+P2 = (1/2)(3x^2 - 1)
+P3 = (1/2)(5x^3 - 3x)
+```
+
+These match the standard Legendre polynomials exactly. The derivation used only integrals and subtraction.
 
 ---
 
-## 5. Derivation 3 — The Generating Function
+## 4. Derivation 2: Rodrigues Formula
 
-A third route defines all the Legendre polynomials at once as the coefficients in a power series. The **generating function** is:
+There is a beautiful closed-form expression that generates every Legendre polynomial from a single recipe. It is called **Rodrigues' formula**:
 
-$$
-\boxed{\,\frac{1}{\sqrt{1 - 2xt + t^2}} = \sum_{n=0}^{\infty} P_n(x)\, t^n.\,}
-$$
+```text
+P_n(x) = (1 / (2^n * n!)) * d^n/dx^n [ (x^2 - 1)^n ]
+```
 
-If you expand the left side as a power series in $t$, the coefficient of $t^n$ is exactly $P_n(x)$.
+In words: take `(x^2 - 1)`, raise it to the n-th power, differentiate n times, and divide by `2^n * n!`.
 
-### 5.1 Extracting the first few
+### Verifying the formula for small n
 
-Let $u = 2xt - t^2$, so the left side is $(1 - u)^{-1/2}$. Use the binomial series $(1-u)^{-1/2} = 1 + \tfrac12 u + \tfrac{3}{8}u^2 + \cdots$:
+**Case n = 0:**
 
-$$
-(1-u)^{-1/2} = 1 + \tfrac12(2xt - t^2) + \tfrac{3}{8}(2xt - t^2)^2 + \cdots
-$$
+```text
+(x^2 - 1)^0 = 1
+0th derivative of 1 = 1
+Divide by 2^0 * 0! = 1 * 1 = 1
+Result: P0 = 1  (correct)
+```
 
-Collect by powers of $t$:
+**Case n = 1:**
 
-- **$t^0$:** the constant term is $1$. So $P_0 = 1$. ✓
-- **$t^1$:** from $\tfrac12(2xt) = xt$, the coefficient is $x$. So $P_1 = x$. ✓
-- **$t^2$:** from $\tfrac12(-t^2) = -\tfrac12 t^2$ and from $\tfrac38(2xt)^2 = \tfrac38 \cdot 4x^2 t^2 = \tfrac32 x^2 t^2$. Total: $\tfrac32 x^2 - \tfrac12 = \tfrac12(3x^2-1)$. So $P_2 = \tfrac12(3x^2-1)$. ✓
+```text
+(x^2 - 1)^1 = x^2 - 1
+1st derivative: 2x
+Divide by 2^1 * 1! = 2
+Result: 2x / 2 = x = P1  (correct)
+```
 
-### 5.2 Why this form? A physics connection
+**Case n = 2:**
 
-This exact expression is not arbitrary — it is the formula for the electric (or gravitational) potential. The distance between a point at distance $r$ from the origin and a unit charge at distance $1$, separated by angle $\theta$, is $\sqrt{1 - 2r\cos\theta + r^2}$ by the law of cosines. So $\frac{1}{\sqrt{1 - 2r\cos\theta + r^2}} = \sum_n P_n(\cos\theta)\, r^n$. This is precisely why Legendre polynomials appear throughout physics: they are the natural building blocks for expanding potentials around a sphere. Here $x = \cos\theta$ and $t = r$.
+```text
+(x^2 - 1)^2 = x^4 - 2x^2 + 1
+
+1st derivative: 4x^3 - 4x
+2nd derivative: 12x^2 - 4
+
+Divide by 2^2 * 2! = 4 * 2 = 8:
+(12x^2 - 4) / 8 = (3x^2 - 1) / 2 = (1/2)(3x^2 - 1) = P2  (correct)
+```
+
+**Case n = 3:**
+
+```text
+(x^2 - 1)^3 = x^6 - 3x^4 + 3x^2 - 1
+
+1st derivative: 6x^5 - 12x^3 + 6x
+2nd derivative: 30x^4 - 36x^2 + 6
+3rd derivative: 120x^3 - 72x
+
+Divide by 2^3 * 3! = 8 * 6 = 48:
+(120x^3 - 72x) / 48 = (5x^3 - 3x) / 2 = (1/2)(5x^3 - 3x) = P3  (correct)
+```
+
+### Why Rodrigues' formula produces orthogonal polynomials
+
+The elegance of Rodrigues' formula is that orthogonality is baked in automatically, via a clever use of **integration by parts**.
+
+We want to show that for any m less than n:
+
+```text
+integral from -1 to 1 of:  x^m * d^n/dx^n[(x^2-1)^n]  dx  =  0
+```
+
+(Checking against all `x^m` for m less than n is enough, since any lower-degree polynomial is a combination of such powers.)
+
+Apply integration by parts n times. Each application moves one derivative off the `(x^2-1)^n` factor and onto `x^m`, picking up a minus sign. The key observation: `(x^2 - 1)^n` and its first `n-1` derivatives all vanish at x = -1 and x = 1, because `(x^2 - 1) = (x-1)(x+1)` has roots at both endpoints. This kills every boundary term.
+
+After n applications of integration by parts:
+
+```text
+integral of  x^m * d^n/dx^n[(x^2-1)^n]  dx
+
+= (-1)^n * integral of  d^n/dx^n[x^m]  *  (x^2-1)^n  dx
+```
+
+But if m is less than n, then differentiating `x^m` a total of n times gives zero: you differentiated a degree-m polynomial more times than its degree. Therefore the whole integral is zero. Orthogonality proved. The `(x^2-1)^n` factor does the work of automatically making the polynomial orthogonal to everything of lower degree.
 
 ---
 
-## 6. Derivation 4 — Legendre's Differential Equation
+## 5. Derivation 3: The Generating Function
 
-The fourth characterization: Legendre polynomials are the well-behaved solutions of a specific differential equation. **Legendre's differential equation** is:
+A third approach defines all Legendre polynomials at once. The **generating function** is:
 
-$$
-\boxed{\,(1 - x^2)\, y'' - 2x\, y' + n(n+1)\, y = 0.\,}
-$$
+```text
+1 / sqrt(1 - 2*x*t + t^2)  =  P0(x) + P1(x)*t + P2(x)*t^2 + P3(x)*t^3 + ...
+```
 
-Equivalently, in compact "self-adjoint" form:
-$$
-\frac{d}{dx}\left[(1 - x^2)\, \frac{dy}{dx}\right] + n(n+1)\, y = 0.
-$$
-(You can check these are the same: expand the derivative of the product, $\frac{d}{dx}[(1-x^2)y'] = (1-x^2)y'' - 2x y'$.)
+If you expand the left side as a power series in t, the coefficient of `t^n` is exactly `P_n(x)`.
 
-For each non-negative integer $n$, the polynomial solution to this equation is $P_n(x)$.
+### Extracting the first few polynomials
 
-### 6.1 Verifying $P_2$ solves it
+Let `u = 2xt - t^2`, so the left side is `(1 - u)^(-1/2)`. The binomial series gives:
 
-Take $P_2 = \tfrac12(3x^2 - 1)$, so $n = 2$ and $n(n+1) = 6$.
+```text
+(1 - u)^(-1/2) = 1 + (1/2)*u + (3/8)*u^2 + ...
+```
 
-- $y = \tfrac12(3x^2 - 1) = \tfrac32 x^2 - \tfrac12$
-- $y' = 3x$
-- $y'' = 3$
+Substitute `u = 2xt - t^2` and collect by powers of t:
 
-Substitute into the left side:
-$$
-(1 - x^2)(3) - 2x(3x) + 6\left(\tfrac32 x^2 - \tfrac12\right)
-$$
-$$
-= 3 - 3x^2 - 6x^2 + 9x^2 - 3 = (3 - 3) + (-3 - 6 + 9)x^2 = 0. \quad \checkmark
-$$
+**Coefficient of t^0:** The constant term is `1`. So `P0 = 1`. Correct.
 
-It satisfies the equation exactly.
+**Coefficient of t^1:** From `(1/2)(2xt) = xt`, the coefficient is `x`. So `P1 = x`. Correct.
 
-### 6.2 Why this matters — the deep reason for orthogonality
+**Coefficient of t^2:** Comes from two places: the `(1/2)(-t^2)` term gives `-1/2`, and the `(3/8)(2xt)^2 = (3/2)x^2 t^2` term gives `(3/2)x^2`. Total: `(3/2)x^2 - 1/2 = (1/2)(3x^2 - 1)`. So `P2 = (1/2)(3x^2 - 1)`. Correct.
 
-The self-adjoint form is an example of a **Sturm–Liouville problem**. A general theorem about such problems states: *solutions corresponding to different values of $n$ are automatically orthogonal.* This gives a fourth, independent proof that the $P_n$ are orthogonal — and it explains why orthogonality is not a coincidence but a structural feature of the differential equation.
+### Where this formula comes from (a physics connection)
 
-We can even see it directly. Write the equation for $P_n$ and for $P_m$:
-$$
-\frac{d}{dx}\big[(1-x^2)P_n'\big] = -n(n+1)P_n, \qquad
-\frac{d}{dx}\big[(1-x^2)P_m'\big] = -m(m+1)P_m.
-$$
-Multiply the first by $P_m$, the second by $P_n$, subtract, and integrate over $[-1,1]$. The left side integrates (by parts) to zero because the $(1-x^2)$ factor vanishes at $\pm 1$. The right side becomes $\big[m(m+1) - n(n+1)\big]\int_{-1}^1 P_n P_m\, dx$. Since the bracket is nonzero when $m \neq n$, the integral must be zero. **Orthogonality, proved yet again — this time straight from the differential equation.**
+This expression is not arbitrary. It is the formula for the electric (or gravitational) potential between two point charges.
+
+Suppose a unit charge sits at distance 1 from the origin, and a test point is at distance r from the origin, with angle theta between them. By the law of cosines, the distance between them is `sqrt(1 - 2r*cos(theta) + r^2)`. Therefore the potential (which is `1/distance`) is:
+
+```text
+1 / sqrt(1 - 2*r*cos(theta) + r^2)  =  sum over n of  P_n(cos theta) * r^n
+```
+
+This is the "multipole expansion." The `n = 0` term is the monopole (overall charge), the `n = 1` term is the dipole, the `n = 2` term is the quadrupole, and so on. Setting `x = cos(theta)` and `t = r`, this is exactly the generating function. Legendre polynomials are the natural expansion basis for any problem with angular symmetry, which is why they appear throughout physics.
+
+---
+
+## 6. Derivation 4: Legendre's Differential Equation
+
+The fourth characterization: Legendre polynomials are the well-behaved solutions to a specific ordinary differential equation. The equation is:
+
+```text
+(1 - x^2) * y'' - 2x * y' + n*(n+1) * y = 0
+```
+
+where `y'` means the first derivative of y and `y''` means the second derivative. This can be written more compactly as:
+
+```text
+d/dx [ (1 - x^2) * dy/dx ] + n*(n+1) * y = 0
+```
+
+You can check these are the same: expand the outer derivative to get `(1-x^2)*y'' + (-2x)*y'`, which is `(1-x^2)*y'' - 2x*y'`, matching the first form.
+
+For each non-negative integer n, the polynomial solution to this equation is `P_n(x)`.
+
+### Verifying P2 solves the equation
+
+Take `P2 = (1/2)(3x^2 - 1)` with `n = 2`, so `n*(n+1) = 6`.
+
+```text
+y  = (3/2)x^2 - 1/2
+y' = 3x
+y''= 3
+```
+
+Substitute into the equation:
+
+```text
+(1 - x^2) * 3  -  2x * 3x  +  6 * ((3/2)x^2 - 1/2)
+
+= 3 - 3x^2  -  6x^2  +  9x^2 - 3
+
+= (3 - 3)  +  (-3 - 6 + 9)x^2
+
+= 0 + 0 = 0  (satisfied)
+```
+
+### Why this matters: orthogonality from the equation itself
+
+The form `d/dx[(1-x^2)*y'] + n*(n+1)*y = 0` is an example of a **Sturm-Liouville problem**. A general theorem about such problems says: solutions corresponding to different values of n are automatically orthogonal. This gives a fourth independent proof of orthogonality, and it reveals something deeper: orthogonality is not a coincidence or a result of careful construction. It is a structural property that any equation of this form produces.
+
+To see it directly: write the equation for `P_n` and for `P_m`:
+
+```text
+d/dx[(1-x^2) * P_n'] = -n*(n+1) * P_n
+d/dx[(1-x^2) * P_m'] = -m*(m+1) * P_m
+```
+
+Multiply the first by `P_m`, the second by `P_n`, subtract, and integrate over `[-1, 1]`. The left side integrates (by parts) to zero, because `(1-x^2)` vanishes at both endpoints. The right side becomes:
+
+```text
+[ m*(m+1) - n*(n+1) ] * integral from -1 to 1 of:  P_n * P_m  dx
+```
+
+When m is not equal to n, the bracket in front is nonzero. Therefore the integral must be zero. Orthogonality, proved again, directly from the differential equation.
 
 ---
 
 ## 7. The Orthogonality Property
 
-We have now proved orthogonality three separate ways (via Gram–Schmidt construction, via Rodrigues + integration by parts, and via the differential equation). Let us state the complete result cleanly and verify it directly.
+We have now proved orthogonality three independent ways: through the Gram-Schmidt construction, through Rodrigues' formula and integration by parts, and through the differential equation. The result is:
 
-**The orthogonality relation:**
-$$
-\boxed{\,\int_{-1}^{1} P_n(x)\, P_m(x)\, dx = 0 \quad\text{whenever } n \neq m.\,}
-$$
+```text
+integral from -1 to 1 of:  P_n(x) * P_m(x)  dx  =  0    whenever n is not equal to m
+```
 
-The picture below shows *why* this integral vanishes for $P_1 \cdot P_2$. The product $P_1 P_2 = x\cdot\tfrac12(3x^2-1)$ has positive area (blue) and negative area (red) that exactly cancel:
+To build intuition for why this happens, consider the case of P1 times P2. We have `P1 = x` and `P2 = (1/2)(3x^2 - 1)`. Their product is `(1/2)(3x^3 - x)`.
 
-<svg viewBox="0 0 520 280" xmlns="http://www.w3.org/2000/svg" style="max-width:520px;width:100%;background:#fafafa;border-radius:8px;">
-  <!-- axes -->
-  <line x1="40" y1="140" x2="500" y2="140" stroke="#999" stroke-width="1"/>
-  <line x1="270" y1="20" x2="270" y2="260" stroke="#999" stroke-width="1"/>
-  <text x="505" y="144" font-size="12" fill="#666">x</text>
-  <text x="278" y="30" font-size="12" fill="#666">P₁·P₂</text>
-  <text x="36" y="155" font-size="11" fill="#999">-1</text>
-  <text x="495" y="155" font-size="11" fill="#999">1</text>
-  <!-- product P1*P2 = 0.5(3x^3 - x); shade regions.
-       roots at x=0 and x=±1/sqrt3 (~0.577).
-       Screen mapping: x in [-1,1] -> [40,500], scale y so peak fits. -->
-  <!-- Negative-area lobe left of 0 that is below axis, positive above etc.
-       We shade two lobes blue (positive integral contribution) and two red (negative), symmetric -->
-  <!-- Left half (x from -1 to 0): -->
-  <path d="M 40,140 Q 63,180 86,175 Q 130,160 155,140 Z" fill="#D85A30" opacity="0.35"/>
-  <path d="M 155,140 Q 210,110 270,140 Z" fill="#4A7FC0" opacity="0.35"/>
-  <!-- Right half mirrored (odd*even = odd -> antisymmetric product) -->
-  <path d="M 270,140 Q 330,170 385,140 Z" fill="#D85A30" opacity="0.35"/>
-  <path d="M 385,140 Q 435,100 457,105 Q 480,110 500,140 Z" fill="#4A7FC0" opacity="0.35"/>
-  <!-- the product curve itself: 0.5(3x^3 - x) -->
-  <polyline fill="none" stroke="#333" stroke-width="2.5" points="40,140 86,175 132,168 178,148 224,135 270,140 316,145 362,132 408,112 454,105 500,140"/>
-  <text x="120" y="200" font-size="12" fill="#D85A30">negative area</text>
-  <text x="300" y="115" font-size="12" fill="#4A7FC0">positive area</text>
-  <text x="270" y="255" font-size="12" fill="#666" text-anchor="middle">positive and negative areas cancel → integral = 0</text>
-</svg>
+This is an **odd function**: it satisfies `f(-x) = -f(x)`. For any odd function, the integral from -1 to 1 is zero, because the area on the left half `[-1, 0]` is the exact mirror image (with opposite sign) of the area on the right half `[0, 1]`. They cancel perfectly.
 
-Because $P_1$ is odd and $P_2$ is even, their product is odd, so the area on the left of the $y$-axis exactly cancels the area on the right. Orthogonality is this cancellation, made exact.
+Why is P1 * P2 an odd function? Because `P1 = x` is odd and `P2` is even (contains only even powers of x). Odd times even equals odd. An odd function always integrates to zero on a symmetric interval.
 
-### 7.1 Direct check: $P_1$ against $P_3$
+This even/odd cancellation is one of the main mechanisms behind orthogonality of Legendre polynomials, but it is not the whole story. Even pairs like P2 * P4 are also orthogonal, and the cancellation there is less visually obvious but just as real.
 
-$$
-\int_{-1}^{1} P_1 P_3\, dx = \int_{-1}^1 x \cdot \tfrac12(5x^3 - 3x)\, dx = \tfrac12\int_{-1}^1 (5x^4 - 3x^2)\, dx.
-$$
-$$
-= \tfrac12\left[5\cdot\frac{x^5}{5} - 3\cdot\frac{x^3}{3}\right]_{-1}^1 = \tfrac12\left[x^5 - x^3\right]_{-1}^1 = \tfrac12\big[(1 - 1) - (-1 + 1)\big] = 0. \quad\checkmark
-$$
+### Direct check: P1 against P3
 
-### 7.2 Direct check: $P_0$ against $P_2$
+Both P1 and P3 are odd functions. Their product is even, so the cancellation is subtler.
 
-$$
-\int_{-1}^1 P_0 P_2\, dx = \int_{-1}^1 1\cdot\tfrac12(3x^2 - 1)\, dx = \tfrac12\left[x^3 - x\right]_{-1}^1 = \tfrac12\big[(1-1) - (-1+1)\big] = 0. \quad\checkmark
-$$
+```text
+integral from -1 to 1 of:  P1 * P3  dx
 
-Every distinct pair integrates to zero. This is the single most important property, and it is what makes the polynomials useful for representing data: each captures information the others do not.
+= integral of  x * (1/2)(5x^3 - 3x)  dx  from -1 to 1
+
+= (1/2) * integral of  (5x^4 - 3x^2)  dx  from -1 to 1
+
+= (1/2) * [ 5*(x^5/5) - 3*(x^3/3) ] from -1 to 1
+
+= (1/2) * [ x^5 - x^3 ] from -1 to 1
+
+= (1/2) * [ (1 - 1) - (-1 - (-1)) ]
+
+= (1/2) * [0 - 0] = 0  (confirmed)
+```
+
+### Direct check: P0 against P2
+
+```text
+integral from -1 to 1 of:  P0 * P2  dx
+
+= integral of  1 * (1/2)(3x^2 - 1)  dx  from -1 to 1
+
+= (1/2) * [x^3 - x] from -1 to 1
+
+= (1/2) * [(1 - 1) - (-1 + 1)]
+
+= (1/2) * [0 - 0] = 0  (confirmed)
+```
+
+Every distinct pair integrates to zero. This is the single most important property of Legendre polynomials, and it is what makes them useful for representing data: each coefficient captures information that is completely independent of every other coefficient.
 
 ---
 
 ## 8. The Normalization Constant
 
-Orthogonality says the integral is zero for $n \neq m$. But what is it when $n = m$? This is the **norm-squared**, and its value is:
+Orthogonality tells us the integral is zero when n is not equal to m. What is the integral when n equals m? This is the **norm-squared** of P_n, and the answer is:
 
-$$
-\boxed{\,\int_{-1}^{1} P_n(x)^2\, dx = \frac{2}{2n + 1}.\,}
-$$
+```text
+integral from -1 to 1 of:  P_n(x)^2  dx  =  2 / (2n + 1)
+```
 
-This particular number — and especially the factor $\sqrt{2n+1}$ that comes from it — is exactly what appears throughout the HiPPO matrices. Let us derive and verify it.
+The factor `sqrt(2n+1)` that comes from this formula is exactly what appears in every entry of the HiPPO matrices A and B. This is not a coincidence. HiPPO uses the normalized versions of the Legendre polynomials (scaled so each has unit norm), and the normalization factor is `sqrt((2n+1)/2)`. Multiplying P_n by this factor undoes the `2/(2n+1)` norm and leaves norm 1.
 
-### 8.1 Verifying for $n = 0, 1, 2$
+### Verifying for n = 0, 1, 2
 
-**$n = 0$:** $\int_{-1}^1 1^2\, dx = 2$. Formula: $\frac{2}{2(0)+1} = \frac{2}{1} = 2$. ✓
+**n = 0:**
 
-**$n = 1$:** $\int_{-1}^1 x^2\, dx = \frac{2}{3}$. Formula: $\frac{2}{2(1)+1} = \frac{2}{3}$. ✓
+```text
+integral of  1^2  dx  from -1 to 1  =  2
 
-**$n = 2$:**
-$$
-\int_{-1}^1 \left[\tfrac12(3x^2 - 1)\right]^2 dx = \tfrac14\int_{-1}^1 (9x^4 - 6x^2 + 1)\, dx.
-$$
-$$
-= \tfrac14\left[9\cdot\frac{x^5}{5} - 6\cdot\frac{x^3}{3} + x\right]_{-1}^1 = \tfrac14\left[\frac{9}{5}\cdot 2 - 2\cdot 2 + 2\right] = \tfrac14\left[\frac{18}{5} - 4 + 2\right] = \tfrac14\cdot\frac{8}{5} = \frac{2}{5}.
-$$
-Formula: $\frac{2}{2(2)+1} = \frac{2}{5}$. ✓
+Formula: 2 / (2*0 + 1) = 2 / 1 = 2  (correct)
+```
 
-### 8.2 The normalized Legendre polynomials
+**n = 1:**
 
-If we want unit-norm ("orthonormal") versions, we divide each $P_n$ by its norm $\sqrt{2/(2n+1)}$, equivalently multiplying by $\sqrt{(2n+1)/2}$:
+```text
+integral of  x^2  dx  from -1 to 1
 
-$$
-\tilde{P}_n(x) = \sqrt{\frac{2n+1}{2}}\; P_n(x), \qquad \int_{-1}^1 \tilde P_n(x)^2\, dx = 1.
-$$
+= [x^3 / 3] from -1 to 1 = 1/3 - (-1/3) = 2/3
 
-The factor $\sqrt{2n+1}$ appearing here is the origin of every square root in the HiPPO $A$ and $B$ matrices. That is not a coincidence — HiPPO uses the *normalized* Legendre polynomials as its reference shapes.
+Formula: 2 / (2*1 + 1) = 2 / 3  (correct)
+```
+
+**n = 2:**
+
+```text
+integral of  [(1/2)(3x^2 - 1)]^2  dx  from -1 to 1
+
+= (1/4) * integral of  (9x^4 - 6x^2 + 1)  dx  from -1 to 1
+
+= (1/4) * [ 9*(x^5/5) - 6*(x^3/3) + x ] from -1 to 1
+
+= (1/4) * [ (9/5)*2 - 2*2 + 2 ]
+
+= (1/4) * [ 18/5 - 4 + 2 ]
+
+= (1/4) * [ 18/5 - 2 ]
+
+= (1/4) * [ 18/5 - 10/5 ]
+
+= (1/4) * (8/5) = 2/5
+
+Formula: 2 / (2*2 + 1) = 2 / 5  (correct)
+```
+
+### The orthonormal versions
+
+If we want unit-norm polynomials (norm exactly 1 instead of `sqrt(2/(2n+1))`), we divide each `P_n` by its norm, which means multiplying by `sqrt((2n+1)/2)`:
+
+```text
+normalized P_n(x)  =  sqrt((2n+1)/2) * P_n(x)
+
+integral of  [normalized P_n]^2  dx  =  1
+```
+
+The factor `sqrt(2n+1)` in the HiPPO matrices comes directly from this normalization. Every `sqrt(2n+1)` you see in the A and B matrices is the normalization factor for the n-th Legendre polynomial, appearing because HiPPO works with the unit-norm versions.
 
 ---
 
 ## 9. Recurrence Relations
 
-Computing high-degree Legendre polynomials by Gram–Schmidt or Rodrigues gets tedious. Fortunately there is a shortcut: each polynomial can be built from the two before it.
+Computing Legendre polynomials by Gram-Schmidt or Rodrigues' formula becomes tedious for large n. There is a shortcut: each polynomial can be built from the two before it using a simple formula.
 
-### 9.1 The three-term (Bonnet) recurrence
+### The three-term recurrence
 
-$$
-\boxed{\,(n+1)\, P_{n+1}(x) = (2n+1)\, x\, P_n(x) - n\, P_{n-1}(x).\,}
-$$
-
-Given $P_0 = 1$ and $P_1 = x$, this generates all the rest. Each new polynomial is built from its two immediate predecessors — a ladder climbing upward:
-
-```mermaid
-flowchart LR
-    P0["P₀ = 1"] --> P2["P₂"]
-    P1["P₁ = x"] --> P2
-    P1 --> P3["P₃"]
-    P2 --> P3
-    P2 --> P4["P₄"]
-    P3 --> P4
-    P3 --> P5["P₅"]
-    P4 --> P5
-
-    style P0 fill:#FAEEDA,stroke:#BA7517,color:#633806
-    style P1 fill:#FAEEDA,stroke:#BA7517,color:#633806
-    style P2 fill:#EEEDFE,stroke:#7F77DD,color:#3C3489
-    style P3 fill:#EEEDFE,stroke:#7F77DD,color:#3C3489
-    style P4 fill:#EEEDFE,stroke:#7F77DD,color:#3C3489
-    style P5 fill:#EEEDFE,stroke:#7F77DD,color:#3C3489
+```text
+(n+1) * P_{n+1}(x)  =  (2n+1) * x * P_n(x)  -  n * P_{n-1}(x)
 ```
 
-Each $P_{n+1}$ draws exactly two arrows in: from $P_n$ and from $P_{n-1}$. That "only two predecessors" structure is the three-term recurrence, and Section 9.3 explains why it can never need more than two.
+Given `P0 = 1` and `P1 = x`, this formula generates all the rest. Each new polynomial needs only its two immediate predecessors.
 
-### 9.2 Using it to compute $P_2$ and $P_3$
+The flow is: P0 and P1 together give P2; P1 and P2 give P3; P2 and P3 give P4; and so on. Each polynomial connects to exactly two predecessors and two successors.
 
-**For $P_2$** (set $n = 1$):
-$$
-(1+1)P_2 = (2\cdot 1 + 1)\, x\, P_1 - 1\cdot P_0
-$$
-$$
-2P_2 = 3x\cdot x - 1 = 3x^2 - 1 \implies P_2 = \tfrac12(3x^2 - 1). \quad\checkmark
-$$
+### Using the recurrence to compute P2, P3, P4
 
-**For $P_3$** (set $n = 2$):
-$$
-(2+1)P_3 = (2\cdot 2 + 1)\, x\, P_2 - 2\, P_1
-$$
-$$
-3P_3 = 5x\cdot\tfrac12(3x^2 - 1) - 2x = \tfrac52(3x^3 - x) - 2x = \tfrac{15}{2}x^3 - \tfrac52 x - 2x = \tfrac{15}{2}x^3 - \tfrac92 x
-$$
-$$
-P_3 = \tfrac52 x^3 - \tfrac32 x = \tfrac12(5x^3 - 3x). \quad\checkmark
-$$
+**Computing P2 (set n = 1):**
 
-**For $P_4$** (set $n = 3$):
-$$
-4P_4 = 7x\cdot\tfrac12(5x^3 - 3x) - 3\cdot\tfrac12(3x^2-1) = \tfrac72(5x^4 - 3x^2) - \tfrac32(3x^2 - 1)
-$$
-$$
-= \tfrac{35}{2}x^4 - \tfrac{21}{2}x^2 - \tfrac92 x^2 + \tfrac32 = \tfrac{35}{2}x^4 - 15x^2 + \tfrac32
-$$
-$$
-P_4 = \tfrac{35}{8}x^4 - \tfrac{15}{4}x^2 + \tfrac38 = \tfrac18(35x^4 - 30x^2 + 3). \quad\checkmark
-$$
+```text
+(1+1) * P2  =  (2*1+1) * x * P1  -  1 * P0
 
-### 9.3 Why the recurrence has only three terms
+2 * P2  =  3x * x  -  1
 
-The reason connects back to orthogonality, and it's worth understanding because this same structure is what makes the HiPPO matrix lower-triangular. Consider $x\, P_n(x)$: it is a polynomial of degree $n+1$, so it can be written as a combination of $P_0, P_1, \dots, P_{n+1}$:
-$$
-x\, P_n = \sum_{k=0}^{n+1} c_k\, P_k.
-$$
-To find $c_k$, take the inner product with $P_k$ and use orthogonality. This gives $c_k \propto \langle x P_n, P_k\rangle = \langle P_n, x P_k\rangle$. But $x P_k$ has degree $k+1$; if $k + 1 < n$ (that is, $k < n - 1$), then $x P_k$ has degree less than $n$, and $P_n$ is orthogonal to everything of lower degree — so $c_k = 0$. Only $c_{n-1}, c_n, c_{n+1}$ can be nonzero. Hence exactly three terms. (And $c_n = 0$ too, by symmetry, leaving the clean two-neighbor form.)
+2 * P2  =  3x^2 - 1
+
+P2  =  (1/2)(3x^2 - 1)  (correct)
+```
+
+**Computing P3 (set n = 2):**
+
+```text
+(2+1) * P3  =  (2*2+1) * x * P2  -  2 * P1
+
+3 * P3  =  5x * (1/2)(3x^2 - 1)  -  2x
+
+3 * P3  =  (5/2)(3x^3 - x)  -  2x
+
+3 * P3  =  (15/2)x^3  -  (5/2)x  -  2x
+
+3 * P3  =  (15/2)x^3  -  (9/2)x
+
+P3  =  (5/2)x^3  -  (3/2)x  =  (1/2)(5x^3 - 3x)  (correct)
+```
+
+**Computing P4 (set n = 3):**
+
+```text
+4 * P4  =  7x * (1/2)(5x^3 - 3x)  -  3 * (1/2)(3x^2 - 1)
+
+        =  (35/2)x^4 - (21/2)x^2  -  (9/2)x^2 + 3/2
+
+        =  (35/2)x^4  -  15x^2  +  3/2
+
+P4  =  (35/8)x^4  -  (15/4)x^2  +  3/8  =  (1/8)(35x^4 - 30x^2 + 3)  (correct)
+```
+
+### Why there are only three terms (not four or more)
+
+This is a deeper point, and it connects directly to why the HiPPO matrix A is lower-triangular (not dense).
+
+Consider the product `x * P_n(x)`. This is a polynomial of degree `n+1`, so it can be written as a combination of `P0, P1, ..., P_{n+1}`. To find the coefficient of `P_k` in this expansion, we compute the inner product `<x * P_n, P_k>`.
+
+Using a symmetry of the inner product, `<x * P_n, P_k> = <P_n, x * P_k>`. The function `x * P_k` is a polynomial of degree `k + 1`. If `k + 1 < n` (that is, `k < n - 1`), then `x * P_k` has degree less than n, and `P_n` is orthogonal to everything of degree less than n (because Gram-Schmidt built it that way). So `<P_n, x*P_k> = 0` for all `k < n - 1`.
+
+This means in the expansion of `x * P_n`, only the coefficients of `P_{n-1}`, `P_n`, and `P_{n+1}` can be nonzero. Everything further away is orthogonal and contributes nothing. And by a symmetry argument (P_n has definite parity), the `P_n` term also drops out, leaving exactly the two-neighbor structure.
+
+This "only neighbors interact" property is the algebraic reason the HiPPO matrix A has nonzero entries only on and below the diagonal: differentiating a coefficient of degree n only involves coefficients of degree n and below, never higher.
 
 ---
 
 ## 10. Derivative Identities
 
-Legendre polynomials satisfy several identities involving their derivatives. These are the ones that appear directly in the HiPPO derivation, so we state and verify them.
+Legendre polynomials satisfy several useful identities involving their derivatives. The ones in this section appear directly in the HiPPO derivation, so we state, verify, and explain each.
 
-### 10.1 The derivative recurrence
+### The derivative recurrence
 
-$$
-\boxed{\,(2n+1)\, P_n(x) = P_{n+1}'(x) - P_{n-1}'(x).\,}
-$$
+```text
+(2n+1) * P_n(x)  =  d/dx P_{n+1}(x)  -  d/dx P_{n-1}(x)
+```
 
-**Verify for $n = 1$:** left side $= 3 P_1 = 3x$. Right side $= P_2' - P_0'$. Now $P_2' = \frac{d}{dx}\tfrac12(3x^2-1) = 3x$, and $P_0' = 0$. So right side $= 3x - 0 = 3x$. ✓
+In words: the derivative of P_{n+1} minus the derivative of P_{n-1} equals `(2n+1)` times `P_n`. The derivative of a higher polynomial and the derivative of a lower polynomial together reproduce the polynomial in between.
 
-### 10.2 The differential relation
+**Verify for n = 1:**
 
-$$
-\boxed{\,(1 - x^2)\, P_n'(x) = n\big[P_{n-1}(x) - x\, P_n(x)\big].\,}
-$$
+Left side: `3 * P1 = 3x`.
 
-**Verify for $n = 2$:** left side $= (1 - x^2)P_2' = (1-x^2)(3x) = 3x - 3x^3$.
-Right side $= 2[P_1 - x P_2] = 2\left[x - x\cdot\tfrac12(3x^2 - 1)\right] = 2\left[x - \tfrac32 x^3 + \tfrac12 x\right] = 2\left[\tfrac32 x - \tfrac32 x^3\right] = 3x - 3x^3$. ✓
+Right side: `P2' - P0'`. We have `P2' = d/dx (1/2)(3x^2 - 1) = 3x` and `P0' = 0`. So right side `= 3x - 0 = 3x`. Confirmed.
 
-### 10.3 Expressing a derivative in lower polynomials
+### The differential relation
 
-A useful consequence: the derivative $P_n'$ can be written as a sum of lower-degree Legendre polynomials of alternating degree:
-$$
-P_n'(x) = (2n-1)P_{n-1}(x) + (2n-5)P_{n-3}(x) + (2n-9)P_{n-5}(x) + \cdots
-$$
+```text
+(1 - x^2) * P_n'(x)  =  n * [ P_{n-1}(x)  -  x * P_n(x) ]
+```
 
-**Verify for $n = 3$:** $P_3 = \tfrac12(5x^3 - 3x)$, so $P_3' = \tfrac12(15x^2 - 3) = \tfrac{15}{2}x^2 - \tfrac32$.
-Formula gives $(2\cdot3-1)P_2 + (2\cdot3-5)P_0 = 5P_2 + 1\cdot P_0 = 5\cdot\tfrac12(3x^2-1) + 1 = \tfrac{15}{2}x^2 - \tfrac52 + 1 = \tfrac{15}{2}x^2 - \tfrac32$. ✓
+This relates the derivative of `P_n` to `P_n` and `P_{n-1}` themselves, without going to higher degree.
 
-This "derivative lives in lower degrees" property is precisely why differentiating the HiPPO coefficients produces a **lower-triangular** matrix $A$: the rate of change of coefficient $n$ depends only on coefficients of degree $\leq n$, never higher.
+**Verify for n = 2:**
+
+Left side: `(1 - x^2) * P2' = (1 - x^2) * 3x = 3x - 3x^3`.
+
+Right side: `2 * [P1 - x*P2] = 2 * [x - x*(1/2)(3x^2 - 1)] = 2 * [x - (3/2)x^3 + (1/2)x] = 2 * [(3/2)x - (3/2)x^3] = 3x - 3x^3`. Confirmed.
+
+### Expressing the derivative in lower-degree polynomials
+
+A key consequence: the derivative of `P_n` can be written as a sum of lower-degree Legendre polynomials:
+
+```text
+P_n'(x)  =  (2n-1) * P_{n-1}(x)  +  (2n-5) * P_{n-3}(x)  +  (2n-9) * P_{n-5}(x)  + ...
+```
+
+The sum contains every polynomial below degree n that differs from n by an odd number (n-1, n-3, n-5, ...).
+
+**Verify for n = 3:**
+
+```text
+P3 = (1/2)(5x^3 - 3x)
+
+P3' = (1/2)(15x^2 - 3) = (15/2)x^2 - 3/2
+```
+
+The formula gives `(2*3-1)*P2 + (2*3-5)*P0 = 5*P2 + 1*P0`:
+
+```text
+5 * (1/2)(3x^2 - 1) + 1
+
+= (15/2)x^2 - 5/2 + 1
+
+= (15/2)x^2 - 3/2  (confirmed)
+```
+
+**Why this matters for HiPPO:** this is the exact property that makes the HiPPO matrix A lower-triangular. When we compute how fast the n-th projection coefficient is changing over time, the calculus produces a derivative of `P_n`. But the derivative of `P_n` only involves `P_0, P_1, ..., P_{n-1}` (lower degree). Therefore the rate of change of coefficient n depends only on coefficients 0 through n, never on a higher coefficient. In matrix form, this is a lower-triangular structure: every entry above the diagonal is zero.
 
 ---
 
 ## 11. Special Values and Symmetry
 
-A few more properties, quickly derived, that round out the picture.
+A few more properties that round out the picture and are useful in calculations.
 
-### 11.1 Values at the endpoints
+### Values at the endpoints
 
-$$
-P_n(1) = 1 \quad\text{(the defining normalization)}, \qquad P_n(-1) = (-1)^n.
-$$
+```text
+P_n(1) = 1       for all n   (the defining normalization)
 
-The second follows from symmetry (below): $P_n(-1) = (-1)^n P_n(1) = (-1)^n$.
+P_n(-1) = (-1)^n for all n
+```
 
-### 11.2 Parity (even/odd symmetry)
+The value at -1 follows from the symmetry property below: `P_n(-1) = (-1)^n * P_n(1) = (-1)^n * 1 = (-1)^n`.
 
-$$
-\boxed{\,P_n(-x) = (-1)^n\, P_n(x).\,}
-$$
+So even-degree polynomials equal +1 at both endpoints, and odd-degree polynomials equal +1 at x=1 and -1 at x=-1.
 
-- Even $n$ → $P_n$ is an **even** function (symmetric): $P_0 = 1$, $P_2 = \tfrac12(3x^2-1)$ — only even powers.
-- Odd $n$ → $P_n$ is an **odd** function (antisymmetric): $P_1 = x$, $P_3 = \tfrac12(5x^3-3x)$ — only odd powers.
+### Parity: even and odd symmetry
 
-This is visible in every formula: $P_n$ contains only powers of $x$ with the same parity as $n$. It follows from Rodrigues' formula, since $(x^2-1)^n$ is even and each derivative flips parity.
+```text
+P_n(-x) = (-1)^n * P_n(x)
+```
 
-### 11.3 Value at zero
+This means:
 
-For even $n = 2m$:
-$$
-P_{2m}(0) = (-1)^m \frac{(2m)!}{2^{2m}(m!)^2}.
-$$
-For odd $n$, $P_n(0) = 0$ (odd functions pass through the origin).
+- Even n (0, 2, 4, ...): `P_n(-x) = P_n(x)`. The polynomial is symmetric around zero. It contains only even powers of x.
+- Odd n (1, 3, 5, ...): `P_n(-x) = -P_n(x)`. The polynomial is antisymmetric. It contains only odd powers of x.
 
-**Check:** $P_2(0) = \tfrac12(0 - 1) = -\tfrac12$. Formula with $m=1$: $(-1)^1\frac{2!}{2^2 (1!)^2} = -\frac{2}{4} = -\tfrac12$. ✓
+You can verify this by inspection:
 
-### 11.4 Bound on the interval
+```text
+P0 = 1                     (only even power x^0, symmetric)
+P1 = x                     (only odd power x^1, antisymmetric)
+P2 = (1/2)(3x^2 - 1)       (only even powers, symmetric)
+P3 = (1/2)(5x^3 - 3x)      (only odd powers, antisymmetric)
+```
 
-For all $x \in [-1, 1]$: $\;|P_n(x)| \leq 1$. The polynomials never leave the band between $-1$ and $1$ on their home interval, reaching $\pm 1$ only at the endpoints. This bounded behavior is part of why they are numerically well-behaved.
+This parity follows from Rodrigues' formula: `(x^2-1)^n` is always even, and each derivative flips the parity of each term.
+
+### Value at zero
+
+For odd n, `P_n(0) = 0` (because odd functions always pass through zero at x = 0).
+
+For even n = 2m:
+
+```text
+P_{2m}(0) = (-1)^m * (2m)! / (2^{2m} * (m!)^2)
+```
+
+**Check for n = 2 (m = 1):** `P2(0) = (1/2)(0 - 1) = -1/2`. Formula: `(-1)^1 * 2! / (4 * 1) = -2/4 = -1/2`. Confirmed.
+
+### Bound on the interval
+
+For all x in `[-1, 1]`: `|P_n(x)| <= 1`. The polynomials never leave the band between -1 and 1 on their home interval. They reach exactly +1 or -1 only at the endpoints. This bounded behavior is part of why Legendre polynomials are numerically well-behaved for representing signals.
 
 ---
 
 ## 12. Worked Examples
 
-### 12.1 Approximating a function with Legendre polynomials
+### Approximating a function with Legendre coefficients
 
-Suppose we want to approximate $f(x) = x^2$ on $[-1,1]$ using $P_0, P_1, P_2$. We find coefficients $c_n = \frac{\langle f, P_n\rangle}{\langle P_n, P_n\rangle}$.
+This example shows exactly how HiPPO uses Legendre polynomials to represent a history.
 
-$$
-c_0 = \frac{\int_{-1}^1 x^2 \cdot 1\, dx}{\int_{-1}^1 1\, dx} = \frac{2/3}{2} = \frac13.
-$$
-$$
-c_1 = \frac{\int_{-1}^1 x^2 \cdot x\, dx}{\int_{-1}^1 x^2\, dx} = \frac{0}{2/3} = 0.
-$$
-$$
-c_2 = \frac{\int_{-1}^1 x^2 \cdot \tfrac12(3x^2-1)\, dx}{\int_{-1}^1 [\tfrac12(3x^2-1)]^2\, dx} = \frac{\tfrac12\int_{-1}^1(3x^4 - x^2)dx}{2/5} = \frac{\tfrac12(\tfrac65 - \tfrac23)}{2/5} = \frac{\tfrac12\cdot\tfrac{8}{15}}{2/5} = \frac{4/15}{2/5} = \frac23.
-$$
+Suppose we want to represent `f(x) = x^2` on `[-1, 1]` using three Legendre polynomials. We find the coefficient of each polynomial using the projection formula:
 
-So $x^2 \approx \tfrac13 P_0 + \tfrac23 P_2 = \tfrac13 + \tfrac23\cdot\tfrac12(3x^2-1) = \tfrac13 + x^2 - \tfrac13 = x^2$. **Exact**, as it should be — $x^2$ is degree 2, fully captured by $P_0, P_1, P_2$. This is precisely how HiPPO represents a history: as coefficients on the Legendre basis.
+```text
+c_n  =  <f, P_n> / <P_n, P_n>  =  [integral of f * P_n] / [integral of P_n^2]
+```
 
-### 12.2 A summary of the first six polynomials
+**Coefficient c0 (projection onto P0 = 1):**
 
-| $n$ | $P_n(x)$ | parity | $P_n(1)$ | $\int_{-1}^1 P_n^2\,dx$ |
-|-----|----------|--------|----------|--------------------------|
-| 0 | $1$ | even | 1 | $2$ |
-| 1 | $x$ | odd | 1 | $2/3$ |
-| 2 | $\tfrac12(3x^2-1)$ | even | 1 | $2/5$ |
-| 3 | $\tfrac12(5x^3-3x)$ | odd | 1 | $2/7$ |
-| 4 | $\tfrac18(35x^4-30x^2+3)$ | even | 1 | $2/9$ |
-| 5 | $\tfrac18(63x^5-70x^3+15x)$ | odd | 1 | $2/11$ |
+```text
+numerator: integral of x^2 * 1 dx from -1 to 1 = 2/3
+
+denominator: integral of 1^2 dx from -1 to 1 = 2
+
+c0 = (2/3) / 2 = 1/3
+```
+
+**Coefficient c1 (projection onto P1 = x):**
+
+```text
+numerator: integral of x^2 * x dx from -1 to 1 = integral of x^3 dx = 0   (odd)
+
+c1 = 0
+```
+
+**Coefficient c2 (projection onto P2 = (1/2)(3x^2 - 1)):**
+
+```text
+numerator: integral of x^2 * (1/2)(3x^2 - 1) dx from -1 to 1
+
+= (1/2) * integral of (3x^4 - x^2) dx from -1 to 1
+
+= (1/2) * [3*(x^5/5) - x^3/3] from -1 to 1
+
+= (1/2) * [3*(2/5) - 2/3]
+
+= (1/2) * [6/5 - 2/3]
+
+= (1/2) * [18/15 - 10/15]
+
+= (1/2) * (8/15) = 4/15
+
+denominator: 2/5   (from Section 8)
+
+c2 = (4/15) / (2/5) = (4/15) * (5/2) = 2/3
+```
+
+The approximation is:
+
+```text
+f(x)  ~  c0*P0 + c1*P1 + c2*P2
+
+= (1/3)*1 + 0 + (2/3)*(1/2)(3x^2 - 1)
+
+= 1/3 + (1/3)(3x^2 - 1)
+
+= 1/3 + x^2 - 1/3
+
+= x^2
+```
+
+The result is exact. `x^2` is a degree-2 polynomial, so it is fully captured by P0, P1, P2 with no approximation error. This is exactly what HiPPO does: it represents the history of a sequence as coefficients `c0, c1, c2, ...` on the Legendre basis. When those coefficients are updated correctly (using the HiPPO A and B matrices), they always give the best polynomial approximation of the history seen so far.
+
+### Summary table of the first six polynomials
+
+| n | P_n(x) | parity | P_n(1) | integral of P_n^2 |
+| --- | --- | --- | --- | --- |
+| 0 | 1 | even | 1 | 2 |
+| 1 | x | odd | 1 | 2/3 |
+| 2 | (1/2)(3x^2 - 1) | even | 1 | 2/5 |
+| 3 | (1/2)(5x^3 - 3x) | odd | 1 | 2/7 |
+| 4 | (1/8)(35x^4 - 30x^2 + 3) | even | 1 | 2/9 |
+| 5 | (1/8)(63x^5 - 70x^3 + 15x) | odd | 1 | 2/11 |
+
+The pattern in the last column is clear: `2/(2n+1)`. The denominators are 1, 3, 5, 7, 9, 11: the odd numbers.
 
 ---
 
 ## 13. Why They Appear in HiPPO and Physics
 
-**In physics.** The generating function (Section 5) is the multipole expansion of a potential. Legendre polynomials are the natural angular building blocks for anything with spherical symmetry — gravitational fields, electrostatics, the hydrogen atom's wavefunctions. They are the "harmonics" of the sphere in one variable.
+### In physics
 
-**In HiPPO.** The connection is through the properties we derived:
+The generating function (Section 5) shows that Legendre polynomials arise naturally from the law of cosines. They are the angular building blocks for any physical system with spherical symmetry. Specifically:
 
-- **Orthogonality** (Sections 7) means each coefficient stores independent information — no redundancy in the memory.
-- **The normalization $\sqrt{2n+1}$** (Section 8) appears verbatim in the HiPPO $A$ and $B$ matrices.
-- **The derivative-in-lower-degrees identity** (Section 10.3) is why differentiating the coefficients yields a lower-triangular $A$ — information flows coarse-to-fine.
-- **Defined on a finite interval $[-1,1]$** makes them ideal for representing a bounded window of history (rescaled to $[0,t]$).
+- **Electrostatics and gravity**: the potential of a point charge, expanded in powers of the distance ratio, has coefficients that are Legendre polynomials of the angular variable.
+- **Hydrogen atom**: the angular part of the electron's wavefunction involves Legendre polynomials (and their generalizations, the associated Legendre polynomials).
+- **Numerical integration**: Gauss-Legendre quadrature places sample points at the roots of the Legendre polynomials. This is optimal: for a fixed number of sample points, no other placement integrates polynomials as accurately.
 
-The diagram below traces each Legendre property to the exact feature of the HiPPO memory model it produces:
+### In HiPPO
 
-```mermaid
-flowchart LR
-    subgraph LEG["Legendre property"]
-        O["Orthogonality<br/>∫PₙPₘ = 0"]
-        N["Norm √(2n+1)"]
-        D["Derivative in<br/>lower degrees"]
-        I["Finite interval<br/>[-1, 1]"]
-    end
+Every structural feature of the HiPPO memory matrix traces back to a specific property derived in this document:
 
-    subgraph HIP["HiPPO feature"]
-        O2["Independent memory<br/>slots (no redundancy)"]
-        N2["√(2n+1) factors in<br/>matrices A and B"]
-        D2["Lower-triangular A<br/>(coarse → fine flow)"]
-        I2["Represents a bounded<br/>history window [0,t]"]
-    end
+| Legendre property | Where derived | HiPPO feature it produces |
+| --- | --- | --- |
+| Orthogonality: `integral P_n * P_m = 0` | Sections 3, 4, 6 | Each memory slot stores independent information, no redundancy |
+| Norm: `integral P_n^2 = 2/(2n+1)` | Section 8 | The `sqrt(2n+1)` factors in every entry of A and B |
+| Derivative in lower degrees | Section 10.3 | A is lower-triangular: information flows coarse-to-fine, never backward |
+| Defined on a finite interval | Sections 1, 2 | Represents a bounded history window, rescaled from [-1,1] to [0,t] |
+| Orthogonality is minimal-error | Section 12 | The projection coefficients give the best polynomial approximation of the history |
 
-    O --> O2
-    N --> N2
-    D --> D2
-    I --> I2
-
-    style LEG fill:#FAEEDA,stroke:#BA7517
-    style HIP fill:#E1F5EE,stroke:#1D9E75
-    style O fill:#fff,stroke:#BA7517,color:#633806
-    style N fill:#fff,stroke:#BA7517,color:#633806
-    style D fill:#fff,stroke:#BA7517,color:#633806
-    style I fill:#fff,stroke:#BA7517,color:#633806
-    style O2 fill:#fff,stroke:#1D9E75,color:#085041
-    style N2 fill:#fff,stroke:#1D9E75,color:#085041
-    style D2 fill:#fff,stroke:#1D9E75,color:#085041
-    style I2 fill:#fff,stroke:#1D9E75,color:#085041
-```
-
-Every structural feature of the HiPPO memory matrix traces back to a specific property of Legendre polynomials derived in this document. When you rescale $P_n$ from $[-1,1]$ onto the time window $[0,t]$ and ask "how do the projection coefficients change as $t$ grows," the calculus — powered by the recurrence and derivative identities above — produces the HiPPO update rule automatically.
+The HiPPO derivation works by asking: "As time t increases and the history window grows, how fast do the projection coefficients change?" The answer is `d/dt x(t) = -(1/t) A x(t) + (1/t) B u(t)`, where the entries of A come from the derivative identity in Section 10.3 and the `sqrt(2n+1)` normalization factors from Section 8. Every number in those matrices has a specific mathematical origin traceable to the properties derived here.
 
 ---
 
 ## 14. Summary Table and References
 
-### The four ways to define Legendre polynomials
+### Summary: the four derivations
 
-| Method | Definition | Best for |
-|--------|-----------|----------|
-| Gram–Schmidt | orthogonalize $1, x, x^2, \dots$ | seeing where they come from |
-| Rodrigues | $\frac{1}{2^n n!}\frac{d^n}{dx^n}(x^2-1)^n$ | closed-form computation, proving orthogonality |
-| Generating function | coefficients of $(1-2xt+t^2)^{-1/2}$ | physics, series manipulations |
-| Differential equation | bounded solutions of $(1-x^2)y'' - 2xy' + n(n+1)y = 0$ | connecting to Sturm–Liouville theory |
+| Method | What you start with | Key tool | Best for |
+| --- | --- | --- | --- |
+| Gram-Schmidt | Simple powers: 1, x, x^2, ... | Subtract overlap projections | Understanding where they come from |
+| Rodrigues formula | `(1/(2^n * n!)) * d^n/dx^n [(x^2-1)^n]` | Integration by parts | Closed-form computation, proving orthogonality |
+| Generating function | `1 / sqrt(1 - 2xt + t^2)` | Power series expansion | Physics, series manipulations |
+| Differential equation | `(1-x^2)y'' - 2xy' + n(n+1)y = 0` | Sturm-Liouville theory | Connecting to the broader theory of ODEs |
 
 ### The essential properties
 
 | Property | Statement |
-|----------|-----------|
-| Orthogonality | $\int_{-1}^1 P_n P_m\, dx = 0$ for $n \neq m$ |
-| Norm | $\int_{-1}^1 P_n^2\, dx = \dfrac{2}{2n+1}$ |
-| Recurrence | $(n+1)P_{n+1} = (2n+1)x P_n - n P_{n-1}$ |
-| Derivative recurrence | $(2n+1)P_n = P_{n+1}' - P_{n-1}'$ |
-| Differential relation | $(1-x^2)P_n' = n(P_{n-1} - x P_n)$ |
-| Parity | $P_n(-x) = (-1)^n P_n(x)$ |
-| Endpoints | $P_n(1) = 1$, $\;P_n(-1) = (-1)^n$ |
-| Bound | $|P_n(x)| \leq 1$ on $[-1,1]$ |
+| --- | --- |
+| Orthogonality | `integral P_n * P_m dx = 0` for n not equal to m |
+| Norm | `integral P_n^2 dx = 2 / (2n+1)` |
+| Recurrence | `(n+1) P_{n+1} = (2n+1) x P_n - n P_{n-1}` |
+| Derivative recurrence | `(2n+1) P_n = P_{n+1}' - P_{n-1}'` |
+| Differential relation | `(1-x^2) P_n' = n * (P_{n-1} - x P_n)` |
+| Parity | `P_n(-x) = (-1)^n * P_n(x)` |
+| Endpoints | `P_n(1) = 1`, `P_n(-1) = (-1)^n` |
+| Bound | Absolute value of P_n(x) is at most 1 on the whole interval |
 
 ### References
 
-**Standard references for the mathematics**
+#### Standard mathematical references
 
-1. Abramowitz, M., & Stegun, I. A. (1964). *Handbook of Mathematical Functions*. Chapter 8 (Legendre Functions) and Chapter 22 (Orthogonal Polynomials). The classic tables and identities.
-2. Szegő, G. (1939). *Orthogonal Polynomials*. AMS Colloquium Publications, Vol. 23. The definitive scholarly treatise.
-3. Arfken, G. B., Weber, H. J., & Harris, F. E. *Mathematical Methods for Physicists*. Chapter on Legendre functions — derivations aimed at physics students, including the generating function and multipole expansion.
-4. Boas, M. L. *Mathematical Methods in the Physical Sciences*. A gentler treatment of the differential equation and series solutions.
+1. Abramowitz, M., and Stegun, I. A. (1964). Handbook of Mathematical Functions. Chapter 8 (Legendre Functions) and Chapter 22 (Orthogonal Polynomials). The classic reference for tables, identities, and recurrences.
+2. Szego, G. (1939). Orthogonal Polynomials. AMS Colloquium Publications. The definitive scholarly treatment of the full theory.
+3. Arfken, G. B., Weber, H. J., and Harris, F. E. Mathematical Methods for Physicists. Chapter on Legendre functions, including the generating function and the connection to the multipole expansion.
+4. Boas, M. L. Mathematical Methods in the Physical Sciences. A gentler treatment of the differential equation and series solutions, aimed at upper-level undergraduates.
 
-**For the connection to machine learning**
+#### Connection to machine learning
 
-1. Gu, A., Dao, T., Ermon, S., Rudra, A., & Ré, C. (2020). *HiPPO: Recurrent Memory with Optimal Polynomial Projections.* NeurIPS 33. arXiv:2008.07669. Appendix D works out the Legendre-based memory matrices in full.
-2. Gu, A., Goel, K., & Ré, C. (2021). *Efficiently Modeling Long Sequences with Structured State Spaces (S4).* arXiv:2111.00396.
+1. Gu, A., Dao, T., Ermon, S., Rudra, A., and Re, C. (2020). HiPPO: Recurrent Memory with Optimal Polynomial Projections. NeurIPS 2020. arXiv:2008.07669. Appendix D derives the HiPPO matrices using exactly the Legendre properties in this document.
+2. Gu, A., Goel, K., and Re, C. (2021). Efficiently Modeling Long Sequences with Structured State Spaces (S4). arXiv:2111.00396.
 
-**Online**
+#### Online
 
-1. NIST Digital Library of Mathematical Functions (dlmf.nist.gov), Chapter 14 (Legendre and Related Functions) and Chapter 18 (Orthogonal Polynomials) — free, authoritative, searchable.
+1. NIST Digital Library of Mathematical Functions at dlmf.nist.gov, Chapter 14 (Legendre and Related Functions) and Chapter 18 (Orthogonal Polynomials). Free, authoritative, and searchable.
 
 ---
 
-*End of document. Every formula above has been verified by direct computation.*
+Every formula in this document has been verified by direct computation. The derivations are independent: any one of the four is sufficient to define the Legendre polynomials. Seeing all four reveals that these polynomials are not an arbitrary choice but the unique natural answer to several different questions asked from different directions.

@@ -1,150 +1,208 @@
-# Build a Single Neuron From Scratch
+# 01: Build a Single Neuron From Scratch
 
-*Project 1 in my build series, where I rebuild the path from neural networks to a tiny LLM, one piece at a time*
+This is the first project in a series that builds from a single neuron all the way up to a small language model. Every project adds one concept on top of the last. This one starts at the very bottom: one neuron, doing one calculation, producing one number.
 
-I have spent months writing about how LLMs work. The Transformer. Attention. Memory. The whole architecture.
-
-Now I want to actually build it.
-
-Not by using a framework that hides what is happening. From scratch. Starting with the smallest possible piece and building up until I have a working language model trained on my own machine. These are my notes from the first project. The simplest possible neural network. One neuron.
+If neural networks have always felt like a black box to you, this is the right place to start. By the end of this document you will understand exactly what a neuron does, why it does it, and how to write one yourself in about ten lines of Python.
 
 ---
 
-## What a neuron actually is
+## What is a neuron?
 
-Strip away the hype and a neuron is a small piece of math. Three things go in. Some numbers get multiplied together. One number comes out.
+A neuron is the basic unit of a neural network. The name comes from biology (brain cells are also called neurons), but the math is much simpler than biology.
 
-The three things are inputs, weights and a bias.
+A neuron takes in some numbers, combines them in a specific way, and produces one number as output.
 
-Inputs are whatever you are giving the neuron to look at. Numbers representing features of something.
-
-Weights are how much the neuron cares about each input. A larger weight means that input has more influence on the answer.
-
-The bias is a constant added to nudge the result up or down regardless of the inputs.
-
-The neuron multiplies each input by its corresponding weight, adds everything together, adds the bias, and then runs the result through an activation function that squashes it into a useful range.
-
-That is the whole thing. One small piece of math.
+That is all it does. The interesting part is how it combines them, and what happens when you connect thousands of neurons together and let them learn from data. But before we get there, we need to understand the single neuron first.
 
 ---
 
-## A concrete example
+## The three ingredients
 
-Let me make this real with an example.
+Every neuron has three ingredients: **inputs**, **weights**, and a **bias**.
 
-Suppose I want to build a neuron that decides whether to bring an umbrella. The neuron looks at three inputs.
+### Inputs
 
-Cloud cover, a number between 0 and 1 representing how cloudy the sky is.
-Humidity, a number between 0 and 1.
-Wind speed, also between 0 and 1.
+Inputs are the numbers you feed into the neuron. They represent some measurable features of the thing you are trying to reason about.
 
-The neuron also has three weights, one for each input. Intuitively, cloud cover should matter the most, humidity should matter somewhat, and wind speed should matter the least.
+For example, if you are building a neuron to predict whether it will rain, your inputs might be:
 
-So my weights might be something like:
+- Cloud cover (a number between 0 and 1, where 1 means completely overcast)
+- Humidity (a number between 0 and 1)
+- Wind speed (a number between 0 and 1)
 
+The neuron does not care what those numbers represent. It just sees three numbers and works with them.
+
+### Weights
+
+Each input has a corresponding weight. The weight controls how much influence that input has on the final output.
+
+A larger weight means "pay more attention to this input". A smaller weight means "this input matters less". A negative weight means "this input pushes the output down".
+
+For the rain prediction example, cloud cover is probably the most important factor, so it gets a larger weight. Wind speed matters less, so it gets a smaller weight.
+
+```text
+weight for cloud cover = 0.6   (most important)
+weight for humidity    = 0.3   (moderately important)
+weight for wind speed  = 0.1   (least important)
 ```
-weight for cloud cover = 0.6
-weight for humidity = 0.3
-weight for wind speed = 0.1
-```
 
-And a small negative bias to make the neuron slightly skeptical by default.
+These weights are numbers you choose. In a real trained neural network, the weights are numbers the network learns automatically from data. That is the subject of Project 2. For now, we pick them by hand.
 
-```
+### Bias
+
+The bias is a single number added to the result after the inputs and weights have been combined. It shifts the output up or down regardless of what the inputs are.
+
+Think of it as a default tendency. A negative bias makes the neuron skeptical by default; even with moderate inputs, it needs stronger evidence to produce a high output. A positive bias makes it optimistic by default.
+
+```text
 bias = -0.2
 ```
 
-Now I feed in some inputs. A cloudy, slightly humid, light wind day:
+---
 
-```
-cloud cover = 0.9
-humidity = 0.7
-wind speed = 0.3
+## How the neuron calculates its output
+
+With inputs, weights, and a bias in hand, the neuron does two things:
+
+### Step 1: Weighted sum
+
+Multiply each input by its weight, add all of those products together, then add the bias. This is called the weighted sum.
+
+```text
+weighted_sum = (input_1 x weight_1) + (input_2 x weight_2) + (input_3 x weight_3) + bias
 ```
 
-The neuron does its math.
+Using our umbrella example with inputs of 0.9, 0.7, 0.3:
 
-```
-weighted sum = (0.9 × 0.6) + (0.7 × 0.3) + (0.3 × 0.1) + (-0.2)
+```text
+weighted_sum = (0.9 x 0.6) + (0.7 x 0.3) + (0.3 x 0.1) + (-0.2)
              = 0.54 + 0.21 + 0.03 - 0.2
              = 0.58
 ```
 
-This number on its own is not very useful. So the neuron passes it through an activation function. For this example I will use the sigmoid function, which squashes any number into a value between 0 and 1.
+### Step 2: Activation function
 
+The weighted sum (0.58) is just a raw number. It could theoretically be any value, positive or negative, large or small. Before using it as an output, we pass it through an **activation function** that squashes it into a useful range.
+
+The most common activation function for outputs that represent probabilities is the **sigmoid function**:
+
+```text
+sigmoid(x) = 1 / (1 + e^(-x))
 ```
-sigmoid(0.58) = 0.6411
+
+The sigmoid function takes any number and maps it to a value between 0 and 1. Large positive numbers map to values close to 1. Large negative numbers map to values close to 0. Numbers near zero map to values near 0.5.
+
+```text
+sigmoid(0.58) = 1 / (1 + e^(-0.58))
+              = 1 / (1 + 0.5599)
+              = 1 / 1.5599
+              = 0.6411
 ```
 
-That output, 0.6411, is the neuron's prediction. Higher than 0.5, so the answer is bring the umbrella.
+The neuron's output is 0.6411. Since this is greater than 0.5, the decision is: bring the umbrella.
 
-That is one neuron. Doing one forward pass. With three real numbers and a sensible answer.
+Here is the full picture in one diagram:
+
+```text
+inputs          weights         weighted sum      activation      output
+
+cloud = 0.9  x  0.6  = 0.54
+                              0.54
+humidity = 0.7 x 0.3 = 0.21  + 0.21  = 0.58  --> sigmoid --> 0.6411
+                              + 0.03
+wind = 0.3   x  0.1  = 0.03  - 0.20
+bias = -0.2
+```
 
 ---
 
-## The actual code
+## Why do we need an activation function?
 
-Here is the same example written in Python with numpy. About ten lines.
+Without an activation function, a neuron just computes a weighted sum. That is a linear function: it draws a straight line (or a flat plane in higher dimensions) to separate two categories.
+
+Most real problems are not linearly separable. You cannot always draw a straight line to separate "bring umbrella" from "leave it" across all possible weather combinations.
+
+Activation functions introduce non-linearity. A network of neurons with non-linear activations can learn curved, complex boundaries between categories rather than just straight lines. That is what gives neural networks their power.
+
+The sigmoid function is used here because it produces a value between 0 and 1, which maps naturally to a probability. Project 9 onwards uses a different activation called SwiGLU, which is better suited to large language models. But the idea is the same: apply a non-linear function after the weighted sum.
+
+---
+
+## The code
+
+Here is the neuron implemented in Python using numpy:
 
 ```python
 import numpy as np
 
-# A single neuron predicting whether you should bring an umbrella
-# Inputs: cloud_cover (0-1), humidity (0-1), wind_speed (0-1)
-inputs = np.array([0.9, 0.7, 0.3])
-weights = np.array([0.6, 0.3, 0.1])
-bias = -0.2
-
-# Forward pass
-weighted_sum = np.dot(inputs, weights) + bias
-
-# Sigmoid activation
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-output = sigmoid(weighted_sum)
+def neuron(inputs, weights, bias):
+    weighted_sum = np.dot(inputs, weights) + bias
+    return sigmoid(weighted_sum)
+```
 
-print(f"Weighted sum: {weighted_sum:.4f}")
+The `np.dot` function computes the dot product of two arrays, which is exactly the weighted sum: multiply each pair of corresponding elements and add all the results together. It is more concise than writing out each multiplication individually and works for inputs of any length.
+
+Running it with the umbrella example:
+
+```python
+inputs  = np.array([0.9, 0.7, 0.3])
+weights = np.array([0.6, 0.3, 0.1])
+bias    = -0.2
+
+output = neuron(inputs, weights, bias)
+
+print(f"Inputs: cloud cover={inputs[0]}, humidity={inputs[1]}, wind speed={inputs[2]}")
 print(f"Output (probability): {output:.4f}")
 print(f"Decision: {'bring umbrella' if output > 0.5 else 'leave it'}")
 ```
 
-Running this gives:
+Output:
 
-```
-Weighted sum: 0.5800
+```text
+Inputs: cloud cover=0.9, humidity=0.7, wind speed=0.3
 Output (probability): 0.6411
 Decision: bring umbrella
 ```
 
-That is it. A working neuron. No PyTorch. No TensorFlow. Just numpy and a few lines of math.
+---
+
+## What this neuron cannot do
+
+This neuron has two important limitations.
+
+**The weights are hand-picked.** I chose 0.6, 0.3, and 0.1 because they made intuitive sense. But the right weights for a real problem are not obvious. If you change the weights, you get a different answer for the same inputs. A real neural network learns the right weights automatically from labeled examples. That is the subject of Project 2.
+
+**One neuron can only represent a simple decision boundary.** A single neuron divides its input space with a single hyperplane. If the true boundary between "bring umbrella" and "leave it" is curved or irregular, one neuron cannot represent it no matter what weights you use. To learn complex patterns you need many neurons organized in layers, each layer building on the output of the previous one. That is what the later projects build toward.
 
 ---
 
-## What is missing
+## Connecting this to the rest of the series
 
-What I just built is not really a neural network. It is one neuron with hand picked weights that I chose because they made sense for the example. There is no learning. No training. No data.
+Every neural network, no matter how large, is built from this same calculation repeated many times:
 
-If the weights had been different, the neuron would have given a different answer for the same inputs. And here is the important part. A real neural network is a network of these neurons, with weights that are learned automatically from data, not picked by me.
+```text
+output = activation(dot(inputs, weights) + bias)
+```
 
-That is where the next project goes. Building a small network of neurons, and then teaching that network to learn its own weights from examples instead of me writing them by hand.
+In Project 2, we connect neurons into a network and write the training loop that adjusts weights automatically. By Project 10, the architecture is equivalent to LLaMA 2. But every single unit inside that architecture is doing the same thing as the neuron on this page.
 
-The math gets more interesting. The code stays small for a while longer. By the end of the next project, the network will be teaching itself.
-
----
-
-## What I took away from this
-
-For a long time I thought of a neural network as a complicated black box. After writing one neuron from scratch, I realised the complication is not in the individual pieces. Each piece is small. Each piece is a few lines of math.
-
-The complication comes from putting many of these small pieces together and letting them adjust their own weights. That is where the magic actually lives, and that is where the next project picks up.
-
-For now, this small script sits on my laptop. It runs in a tenth of a second. It makes a sensible decision about whether to bring an umbrella. It is the smallest possible neural network. And every architecture I have written about, from RNNs to Transformers to LLMs, is built from this one idea repeated and arranged in clever ways.
-
-I will say it again because I want to remember it. One neuron. Inputs, weights, bias, activation. That is the unit. Everything else is composition.
+The complication in large models is not in the individual pieces. It is in how many of them there are, how they are connected, and how the training signal travels back through all of them to update the weights. Understanding this one neuron first makes all of that much easier to follow.
 
 ---
 
-*This is the first project in my build series. The code for every project lives in a small GitHub repo that grows with the series. If you want to follow along, clone it, run it, modify it.*
+## Running
 
-*What was the moment something in machine learning finally clicked for you? Drop it in the comments, I read every one.*
+```bash
+pip install numpy
+python neuron.py
+```
+
+## Files
+
+```text
+neuron.py      the neuron implementation
+config.json    stores the bias value
+```
